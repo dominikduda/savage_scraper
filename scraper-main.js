@@ -48,6 +48,13 @@
     `and additional classes may be omitted. ` +
     `Canvas-rendered xterm terminals are extracted separately when accessible. -->`;
 
+  // ============================================================
+  // PAGE CONTEXT
+  // ============================================================
+
+  const PAGE_URL_NOTE =
+    `<!-- PAGE_URL: ${window.location.href} -->`;
+
 
   // ============================================================
   // TAG POLICIES
@@ -2467,7 +2474,7 @@
 
 
   const output =
-    `${METADATA_NOTE}\n${html}`;
+    `${METADATA_NOTE}\n${PAGE_URL_NOTE}\n${html}`;
 
 
   // ============================================================

@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/dominikduda/savage_scrapper/main/savage_scrapper_logo.png" width="500" />
+
 # savage_scraper
 
 Chrome extension that turns the current page into a simplified, LLM-friendly HTML representation and copies it directly to your clipboard.

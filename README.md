@@ -13,6 +13,10 @@ Chrome extension that turns the current page into a simplified, LLM-friendly HTM
 * Supports compact and pretty-formatted output
 * Extracts xterm.js terminal content when accessible
 
+Savage Scraper is useful when `Ctrl + A`, `Ctrl + C`, `Ctrl + V` is too clumsy and copying raw page HTML is too noisy.
+
+Instead of dumping everything, it keeps useful structure and removes a lot of implementation detail, so the result is smaller, cleaner and better suited for pasting into an LLM.
+
 ##### Most importantly, it tries to preserve the information that matters while producing much less noise than copying the page source.
 
 Savage Scraper walks the rendered DOM, keeps useful semantic elements and attributes, filters generated/utility classes, removes hidden content when configured to do so and serializes the result into simplified HTML.

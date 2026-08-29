@@ -586,7 +586,10 @@
   // ============================================================
 
   function looksUsefulId(id) {
-    if (!id) {
+    if (
+      typeof id !== 'string' ||
+      !id
+    ) {
       return false;
     }
 
@@ -636,16 +639,18 @@
     // ID
     // ----------------------------------------------------------
 
+    const sourceId =
+      source.getAttribute('id');
+
     if (
-      source.id &&
-      looksUsefulId(source.id)
+      sourceId &&
+      looksUsefulId(sourceId)
     ) {
       target.setAttribute(
         'id',
-        source.id
+        sourceId
       );
     }
-
 
     // ----------------------------------------------------------
     // Classes

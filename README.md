@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/dominikduda/savage_scrapper/main/savage_scrapper_logo.png" width="500" />
+<img src="https://raw.githubusercontent.com/dominikduda/savage_scraper/refs/heads/main/savage_scrapper_logo.png" width="500" />
 
 # savage_scraper
 

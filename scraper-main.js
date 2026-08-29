@@ -52,9 +52,12 @@
   // PAGE CONTEXT
   // ============================================================
 
-  const PAGE_URL_NOTE =
-    `<!-- PAGE_URL: ${window.location.href} -->`;
-
+  const PAGE_CONTEXT = [
+    `<!-- PAGE_URL: ${window.location.href} -->`,
+    `<!-- PAGE_TITLE: ${document.title} -->`,
+    `<!-- CAPTURED_AT: ${new Date().toISOString()} -->`,
+    `<!-- VIEWPORT: ${window.innerWidth}x${window.innerHeight} -->`
+  ].join('\n');
 
   // ============================================================
   // TAG POLICIES

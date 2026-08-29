@@ -19,6 +19,11 @@ body {
   min-width: 310px;
   background: Canvas;
   color: CanvasText;
+  transition: opacity 180ms ease;
+}
+
+body.is-closing {
+  opacity: 0;
 }
 
 button,

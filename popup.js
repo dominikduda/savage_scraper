@@ -28,6 +28,14 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function closeWithFade() {
+  document.body.classList.add('is-closing');
+
+  setTimeout(() => {
+    window.close();
+  }, FADE_MS);
+}
+
 function currentSettings() {
   return {
     includeHidden: includeHidden.checked,
@@ -101,7 +109,7 @@ function armAutoClose() {
   startProgressBar(durationMs);
 
   autoCloseTimer = setTimeout(() => {
-    window.close();
+    closeWithFade();
   }, durationMs);
 }
 
@@ -211,7 +219,7 @@ async function executeScraper(tabId, settings) {
     target: { tabId },
     world: 'MAIN',
     func: pageSettings => {
-      window.__AI_PAGE_SCRAPER_EXTENSION_SETTINGS = pageSettings;
+      window.__SAVAGE_SCRAPER_EXTENSION_SETTINGS = pageSettings;
     },
     args: [{
       includeHidden: settings.includeHidden,
@@ -313,7 +321,7 @@ closeAfter.addEventListener('change', async () => {
 });
 
 closeButton.addEventListener('click', () => {
-  window.close();
+  closeWithFade();
 });
 
 runButton.addEventListener('click', async () => {

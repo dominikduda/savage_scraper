@@ -6,9 +6,9 @@
   // false = only rendered/visible content
   // true  = also include hidden/collapsed DOM content
   const __EXTENSION_SETTINGS =
-    window.__AI_PAGE_SCRAPER_EXTENSION_SETTINGS || {};
+    window.__SAVAGE_SCRAPER_EXTENSION_SETTINGS || {};
 
-  delete window.__AI_PAGE_SCRAPER_EXTENSION_SETTINGS;
+  delete window.__SAVAGE_SCRAPER_EXTENSION_SETTINGS;
 
   const INCLUDE_HIDDEN =
     Boolean(__EXTENSION_SETTINGS.includeHidden);
@@ -37,7 +37,7 @@
   // ============================================================
 
   const METADATA_NOTE =
-    `<!-- AI_PAGE_SCRAPE: simplified rendered page representation; ` +
+    `<!-- SAVAGE_SCRAPER: simplified rendered page representation; ` +
     `NOT 1:1 source HTML. ` +
     `${INCLUDE_HIDDEN
       ? 'Hidden/collapsed content may be included. '

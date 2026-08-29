@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Savage Scraper",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Scrapes a simplified representation of the current page and copies it to the clipboard.",
   "permissions": [
     "activeTab",

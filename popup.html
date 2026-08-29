@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Page Scraper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup">
+    <header class="header">
+      <div>
+        <div class="title">AI Page Scraper</div>
+        <div id="message" class="message" aria-live="polite"></div>
+      </div>
+
+      <button
+        id="closeButton"
+        class="close-button"
+        type="button"
+        aria-label="Close"
+        title="Close"
+      >×</button>
+    </header>
+
+    <section class="settings">
+      <label class="toggle-row">
+        <input id="includeHidden" type="checkbox">
+        <span>Include hidden content</span>
+      </label>
+
+      <label class="toggle-row">
+        <input id="prettyFormat" type="checkbox">
+        <span>Pretty-format HTML</span>
+      </label>
+
+      <div class="slider-block">
+        <div class="slider-label">
+          <label for="closeAfter">Auto-close</label>
+          <output id="closeAfterValue" for="closeAfter">5s</output>
+        </div>
+
+        <input
+          id="closeAfter"
+          type="range"
+          min="2"
+          max="15"
+          step="1"
+          value="5"
+        >
+
+        <div class="range-labels" aria-hidden="true">
+          <span>2s</span>
+          <span>15s</span>
+        </div>
+      </div>
+    </section>
+
+    <button
+      id="runButton"
+      class="run-button is-running"
+      type="button"
+      disabled
+    >SCRAPING…</button>
+
+    <div
+      id="closeProgress"
+      class="close-progress is-paused"
+      role="progressbar"
+      aria-label="Time until popup closes"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="100"
+    >
+      <div id="closeProgressFill" class="close-progress-fill"></div>
+    </div>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

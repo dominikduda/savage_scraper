@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "AI Page Scraper",
+  "version": "1.0.1",
+  "description": "Scrapes a simplified representation of the current page and copies it to the clipboard.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "clipboardWrite"
+  ],
+  "action": {
+    "default_title": "AI Page Scraper",
+    "default_popup": "popup.html"
+  }
+}

@@ -1,0 +1,239 @@
+:root {
+  color-scheme: light dark;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 310px;
+  background: Canvas;
+  color: CanvasText;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.popup {
+  padding: 14px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.message {
+  min-height: 16px;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.3;
+  opacity: 0.7;
+}
+
+.message.is-error {
+  opacity: 1;
+}
+
+.close-button {
+  width: 28px;
+  height: 28px;
+  margin: -6px -6px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.close-button:hover {
+  background: color-mix(in srgb, CanvasText 8%, transparent);
+  opacity: 1;
+}
+
+.settings {
+  display: grid;
+  gap: 12px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.slider-block {
+  margin-top: 2px;
+}
+
+.slider-label,
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slider-label {
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.slider-label output {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+#closeAfter {
+  width: 100%;
+  margin: 0;
+}
+
+.range-labels {
+  margin-top: 2px;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+.run-button {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  height: 36px;
+  margin-top: 16px;
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, CanvasText 9%, Canvas);
+  color: CanvasText;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease;
+}
+
+.run-button.is-ready {
+  cursor: pointer;
+  background: color-mix(in srgb, CanvasText 12%, Canvas);
+}
+
+.run-button.is-ready:hover {
+  background: color-mix(in srgb, CanvasText 17%, Canvas);
+}
+
+.run-button.is-running,
+.run-button.is-scrapped,
+.run-button:disabled {
+  cursor: default;
+}
+
+.run-button.is-running {
+  opacity: 0.72;
+}
+
+.run-button.is-scrapped {
+  border-color: color-mix(in srgb, CanvasText 28%, transparent);
+  background: CanvasText;
+  color: Canvas;
+  opacity: 1;
+}
+
+.run-button.is-scrapped::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  width: 42%;
+  background: color-mix(in srgb, Canvas 30%, transparent);
+  transform: translateX(-140%) skewX(-18deg);
+  animation: success-sweep 620ms ease-out forwards;
+}
+
+@keyframes success-sweep {
+  to {
+    transform: translateX(340%) skewX(-18deg);
+  }
+}
+
+.run-button.is-fading {
+  opacity: 0;
+  transform: translateY(1px);
+}
+
+.run-button.is-error {
+  border-color: color-mix(in srgb, CanvasText 32%, transparent);
+  opacity: 0.85;
+}
+
+.close-progress {
+  overflow: hidden;
+  height: 3px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, CanvasText 12%, transparent);
+  opacity: 0.8;
+}
+
+.close-progress-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: CanvasText;
+  transform: scaleX(1);
+  transform-origin: left center;
+  transition-property: transform;
+  transition-timing-function: linear;
+}
+
+.close-progress.is-paused {
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-button,
+  .close-progress-fill {
+    transition-duration: 0ms !important;
+  }
+
+  .run-button.is-scrapped::after {
+    animation: none;
+  }
+}

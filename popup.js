@@ -54,6 +54,14 @@ function currentSettings() {
 function setMessage(text = '', isError = false) {
   message.textContent = text;
   message.classList.toggle('is-error', isError);
+
+  message.classList.remove('is-changing');
+
+  if (text) {
+    // Force layout so repeated message updates restart the animation.
+    void message.offsetWidth;
+    message.classList.add('is-changing');
+  }
 }
 
 function normalizedCloseSeconds(value) {

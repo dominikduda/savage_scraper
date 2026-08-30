@@ -1032,6 +1032,17 @@
     const el = node;
 
 
+    // Hidden input controls frequently contain framework,
+    // anti-forgery or authentication-related values. Exclude
+    // them even when hidden/collapsed content is requested.
+    if (
+      el instanceof HTMLInputElement &&
+      el.type === 'hidden'
+    ) {
+      return [];
+    }
+
+
     if (
       SKIP_TAGS.has(el.tagName)
     ) {
@@ -2489,69 +2500,12 @@
 
 
   // ============================================================
-  // DIAGNOSTICS
-  // ============================================================
-
-  const plainTextLength =
-    simplified.textContent.length;
-
-
-  console.log(
-    `✅ Simplified page: ${output.length.toLocaleString()} characters`
-  );
-
-
-  console.log(
-    `📝 Text content: ${plainTextLength.toLocaleString()} characters`
-  );
-
-
-  if (
-    xtermExtraction.detectedRoots
-  ) {
-    console.log(
-      `🖥️ Detected ${xtermExtraction.detectedRoots} xterm instance(s); ` +
-      `extracted ${xtermExtraction.results.length}.`
-    );
-
-
-    xtermExtraction.results.forEach(
-      (result, index) => {
-        console.log(
-          `✅ xterm #${index + 1}: ` +
-          `${result.method}, ` +
-          `${result.text.length.toLocaleString()} chars`
-        );
-      }
-    );
-  }
-
-
-  // Debug object.
-  window.__aiPageScrapeResult = {
-    output,
-    simplifiedDOM:
-      simplified,
-    xterms:
-      xtermExtraction.results,
-    settings: {
-      INCLUDE_HIDDEN,
-      PRETTY_FORMAT,
-      MAX_CLASSES_PER_ELEMENT
-    }
-  };
-
-
-  // ============================================================
   // RETURN TO EXTENSION
   // ============================================================
 
   // Clipboard writing is handled by popup.js in the extension
   // context. DevTools' copy() helper is not available here, and
   // page-context clipboard writes are less reliable.
-
-  console.log(output);
-
 
   return output;
 })();

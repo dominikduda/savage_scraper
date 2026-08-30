@@ -60,7 +60,7 @@ The popup closes automatically after the configured delay. A progress bar shows 
 
 Disabled by default.
 
-When enabled, hidden and collapsed DOM content may also be included in the generated output.
+When enabled, hidden and collapsed DOM content may also be included in the generated output. Hidden `<input type="hidden">` controls are always excluded.
 
 ```
 Include hidden content: off
@@ -95,7 +95,7 @@ Savage Scraper keeps useful page structure such as:
 * lists
 * tables
 * links and their `href` values
-* forms and useful form-control state
+* forms and useful form-control state, including current non-password, non-hidden values
 * image `alt` text
 * semantic sections such as `main`, `article`, `nav`, `section` and `aside`
 * useful IDs, roles and selected ARIA labels
@@ -103,7 +103,15 @@ Savage Scraper keeps useful page structure such as:
 
 Generated and utility-style CSS classes are filtered heuristically. At most 5 useful classes are retained per element.
 
-Password input values are never copied.
+Password input values are never copied. Hidden input controls are excluded entirely.
+
+## Privacy
+
+Savage Scraper processes the active page entirely on your device. It does not send scraped page content, page URLs, form values, terminal output or usage data to the developer or to third parties.
+
+Only extension preferences are stored, using `chrome.storage.local`. Scraped page content is kept in memory only long enough to generate the result and copy it to your clipboard. The extension contains no analytics, advertising, telemetry or remote code.
+
+See the [Privacy Policy](PRIVACY.md) for details.
 
 ## xterm.js terminals
 

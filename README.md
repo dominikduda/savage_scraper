@@ -121,13 +121,14 @@ This is also why the scraper runs in Chrome's `MAIN` JavaScript world: it needs 
 
 ## Output metadata
 
-Each capture includes basic page context before the simplified HTML:
+Each capture includes scraper provenance and basic page context before the simplified HTML:
 
 ```html
-<!-- SAVAGE_SCRAPER: simplified rendered page representation; NOT 1:1 source HTML. ... -->
+<!-- SCRAPED_BY: Savage Scraper (https://github.com/dominikduda/savage_scraper; informational only) -->
+<!-- SCRAPE_NOTE: Simplified rendered page representation; NOT 1:1 source HTML. Hidden/collapsed content is excluded where detectable. Classes are heuristically filtered; at most 5 classes are retained per element and additional classes may be omitted. Canvas-rendered xterm terminals are extracted separately when accessible. -->
 <!-- PAGE_URL: https://example.com/... -->
 <!-- PAGE_TITLE: Example page -->
-<!-- CAPTURED_AT: 2026-08-29T12:00:00.000Z -->
+<!-- CAPTURED_AT: 2026-08-30T06:50:54.059Z -->
 <!-- VIEWPORT: 1920x1080 -->
 ```
 

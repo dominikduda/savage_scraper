@@ -36,17 +36,20 @@
   // OUTPUT METADATA
   // ============================================================
 
-  const METADATA_NOTE =
-    `<!-- SAVAGE_SCRAPER: simplified rendered page representation; ` +
-    `NOT 1:1 source HTML. ` +
-    `${INCLUDE_HIDDEN
-      ? 'Hidden/collapsed content may be included. '
-      : 'Hidden/collapsed content is excluded where detectable. '
-    }` +
-    `Classes are heuristically filtered; at most ` +
-    `${MAX_CLASSES_PER_ELEMENT} classes are retained per element ` +
-    `and additional classes may be omitted. ` +
-    `Canvas-rendered xterm terminals are extracted separately when accessible. -->`;
+  const SCRAPE_METADATA = [
+    `<!-- SCRAPED_BY: Savage Scraper ` +
+      `(https://github.com/dominikduda/savage_scraper; informational only) -->`,
+    `<!-- SCRAPE_NOTE: Simplified rendered page representation; ` +
+      `NOT 1:1 source HTML. ` +
+      `${INCLUDE_HIDDEN
+        ? 'Hidden/collapsed content may be included. '
+        : 'Hidden/collapsed content is excluded where detectable. '
+      }` +
+      `Classes are heuristically filtered; at most ` +
+      `${MAX_CLASSES_PER_ELEMENT} classes are retained per element ` +
+      `and additional classes may be omitted. ` +
+      `Canvas-rendered xterm terminals are extracted separately when accessible. -->`
+  ].join('\n');
 
   // ============================================================
   // PAGE CONTEXT
@@ -2482,7 +2485,7 @@
 
 
   const output =
-    `${METADATA_NOTE}\n${PAGE_CONTEXT}\n${html}`;
+    `${SCRAPE_METADATA}\n${PAGE_CONTEXT}\n${html}`;
 
 
   // ============================================================

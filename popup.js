@@ -24,6 +24,13 @@ let autoCloseTimer = null;
 let transitionToken = 0;
 let isRunning = false;
 
+class UnavailablePageError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'UnavailablePageError';
+  }
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -121,6 +128,16 @@ function markRunning() {
   runButton.className = 'run-button is-running';
 }
 
+function showUnavailable(reason) {
+  transitionToken += 1;
+
+  runButton.disabled = true;
+  runButton.textContent = 'UNAVAILABLE';
+  runButton.className = 'run-button is-unavailable';
+
+  setMessage(reason);
+}
+
 function markScrapped() {
   transitionToken += 1;
 
@@ -201,7 +218,54 @@ async function showError(error) {
   });
 }
 
-async function getActiveTabId() {
+function protectedPageReason(url = '') {
+  const normalizedUrl = String(url).toLowerCase();
+
+  const protectedPrefixes = [
+    'chrome://',
+    'chrome-extension://',
+    'chrome-search://',
+    'chrome-untrusted://',
+    'devtools://',
+    'view-source:',
+    'about:',
+    'edge://'
+  ];
+
+  if (
+    protectedPrefixes.some(prefix =>
+      normalizedUrl.startsWith(prefix)
+    )
+  ) {
+    return 'Chrome-protected page';
+  }
+
+  if (
+    normalizedUrl.startsWith('https://chromewebstore.google.com/') ||
+    normalizedUrl.startsWith('https://chrome.google.com/webstore')
+  ) {
+    return 'Chrome Web Store page';
+  }
+
+  return null;
+}
+
+function isInjectionAccessError(error) {
+  const text =
+    error instanceof Error
+      ? error.message
+      : String(error);
+
+  return [
+    'Cannot access a chrome:// URL',
+    'Cannot access a chrome-extension:// URL',
+    'Cannot access contents of url',
+    'The extensions gallery cannot be scripted',
+    'Missing host permission for the tab'
+  ].some(fragment => text.includes(fragment));
+}
+
+async function getActiveTab() {
   const [tab] = await chrome.tabs.query({
     active: true,
     currentWindow: true
@@ -211,35 +275,54 @@ async function getActiveTabId() {
     throw new Error('No active tab.');
   }
 
-  return tab.id;
+  return tab;
 }
 
-async function executeScraper(tabId, settings) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'MAIN',
-    func: pageSettings => {
-      window.__SAVAGE_SCRAPER_EXTENSION_SETTINGS = pageSettings;
-    },
-    args: [{
-      includeHidden: settings.includeHidden,
-      prettyFormat: settings.prettyFormat
-    }]
-  });
+async function executeScraper(tab, settings) {
+  const protectedReason = protectedPageReason(tab.url);
 
-  const injectionResults = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'MAIN',
-    files: ['scraper-main.js']
-  });
-
-  const output = injectionResults?.[0]?.result;
-
-  if (typeof output !== 'string') {
-    throw new Error('Scraper returned no text.');
+  if (protectedReason) {
+    throw new UnavailablePageError(protectedReason);
   }
 
-  return output;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: pageSettings => {
+        window.__SAVAGE_SCRAPER_EXTENSION_SETTINGS = pageSettings;
+      },
+      args: [{
+        includeHidden: settings.includeHidden,
+        prettyFormat: settings.prettyFormat
+      }]
+    });
+
+    const injectionResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      files: ['scraper-main.js']
+    });
+
+    const output = injectionResults?.[0]?.result;
+
+    if (typeof output !== 'string') {
+      throw new Error('Scraper returned no text.');
+    }
+
+    return output;
+  } catch (error) {
+    if (isInjectionAccessError(error)) {
+      const reason =
+        String(tab.url || '').startsWith('file://')
+          ? 'Enable “Allow access to file URLs” for this extension'
+          : 'Chrome does not allow extensions to access this page';
+
+      throw new UnavailablePageError(reason);
+    }
+
+    throw error;
+  }
 }
 
 async function copyOutput(output) {
@@ -258,8 +341,8 @@ async function runScrape() {
 
   try {
     const settings = currentSettings();
-    const tabId = await getActiveTabId();
-    const output = await executeScraper(tabId, settings);
+    const tab = await getActiveTab();
+    const output = await executeScraper(tab, settings);
 
     await copyOutput(output);
 
@@ -273,8 +356,15 @@ async function runScrape() {
     armAutoClose();
   } catch (error) {
     isRunning = false;
-    console.error(error);
-    void showError(error);
+
+    if (error instanceof UnavailablePageError) {
+      console.info('[Savage Scraper]', error.message);
+      showUnavailable(error.message);
+    } else {
+      console.error(error);
+      void showError(error);
+    }
+
     armAutoClose();
   }
 }

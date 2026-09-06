@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Savage Scraper options</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main>
+    <h1>Savage Scraper</h1>
+
+    <section>
+      <h2>MCP integration</h2>
+      <p>
+        Optional integration with the locally running
+        <a href="https://github.com/dominikduda/savage_mcp" target="_blank" rel="noreferrer">savage_mcp</a>
+        server. Manual click-to-clipboard scraping works without enabling MCP access.
+      </p>
+
+      <label for="bridgePort">Local bridge port</label>
+      <input id="bridgePort" type="number" min="1024" max="65535" inputmode="numeric" />
+
+      <label for="bridgeToken">Bridge token</label>
+      <input id="bridgeToken" type="password" autocomplete="off" spellcheck="false" />
+      <p class="hint">
+        Run <code>npm run init</code> in savage_mcp, then paste the generated
+        <code>bridge_token</code> here. The token stays in Chrome local extension storage.
+      </p>
+
+      <div class="buttons">
+        <button id="saveButton" type="button">Save bridge settings</button>
+        <button id="enableButton" type="button">Enable MCP website access</button>
+        <button id="disableButton" type="button" class="secondary">Disable MCP access</button>
+      </div>
+
+      <p id="message" role="status" aria-live="polite"></p>
+
+      <dl id="status">
+        <div>
+          <dt>MCP enabled</dt>
+          <dd id="statusEnabled">—</dd>
+        </div>
+        <div>
+          <dt>Website access granted</dt>
+          <dd id="statusPermission">—</dd>
+        </div>
+        <div>
+          <dt>Local bridge connected</dt>
+          <dd id="statusBridge">—</dd>
+        </div>
+        <div>
+          <dt>Agent tab</dt>
+          <dd id="statusTab">—</dd>
+        </div>
+      </dl>
+
+      <p class="warning">
+        Enabling MCP website access gives Savage Scraper optional permission to access normal HTTP/HTTPS pages.
+        Actual MCP navigation and scraping are additionally restricted by the configurable
+        <code>allowed_hosts</code> whitelist in savage_mcp.
+      </p>
+    </section>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

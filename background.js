@@ -32,6 +32,7 @@ let reconnectTimer = null;
 let handshake = null;
 let allowedHosts = [];
 let agentTabCloseSeconds = DEFAULT_AGENT_TAB_CLOSE_SECONDS;
+let closeAfterScrape = false;
 
 class UnavailablePageError extends Error {
   constructor(message) {
@@ -343,6 +344,15 @@ async function armAgentTabClose() {
   });
 }
 
+async function finishAgentTabAfterScrape(succeeded) {
+  if (succeeded && closeAfterScrape) {
+    await closeAgentTab();
+    return;
+  }
+
+  await armAgentTabClose();
+}
+
 async function waitForTabComplete(tabId, timeoutMs = 30000) {
   const initial = await chrome.tabs.get(tabId);
 
@@ -442,18 +452,22 @@ async function handleOpen(url) {
 
   const parsedUrl = assertAllowedUrl(url);
   const tab = await ensureAgentTab(parsedUrl.href);
+  let scrapeSucceeded = false;
 
   try {
     const output = await performAgentScrape(tab);
     const finalTab = await chrome.tabs.get(tab.id);
 
-    return {
+    const result = {
       content: output,
       url: finalTab.url || parsedUrl.href,
       title: finalTab.title || ''
     };
+
+    scrapeSucceeded = true;
+    return result;
   } finally {
-    await armAgentTabClose();
+    await finishAgentTabAfterScrape(scrapeSucceeded);
   }
 }
 
@@ -463,18 +477,22 @@ async function handleScrape() {
   if (!tab?.id) {
     throw new Error('No Savage MCP agent tab exists. Call savage_open first.');
   }
+  let scrapeSucceeded = false;
 
   try {
     const output = await performAgentScrape(tab);
     const finalTab = await chrome.tabs.get(tab.id);
 
-    return {
+    const result = {
       content: output,
       url: finalTab.url || '',
       title: finalTab.title || ''
     };
+
+    scrapeSucceeded = true;
+    return result;
   } finally {
-    await armAgentTabClose();
+    await finishAgentTabAfterScrape(scrapeSucceeded);
   }
 }
 
@@ -489,6 +507,7 @@ async function handleStatus() {
     bridgeAuthenticated: socketAuthenticated,
     bridgePort: settings.bridgePort,
     allowedHosts,
+    closeAfterScrape,
     agentTab: agentTab?.id
       ? {
           id: agentTab.id,
@@ -669,6 +688,7 @@ async function handleSocketMessage(event, settings) {
 
     allowedHosts = normalizeHostPatterns(message.allowedHosts || []);
     agentTabCloseSeconds = normalizedCloseSeconds(message.agentTabCloseSeconds);
+    closeAfterScrape = message.closeAfterScrape === true;
     await armAgentTabClose();
     return;
   }

@@ -106,7 +106,9 @@ The initial MCP integration intentionally exposes only a small browser surface:
 
 Savage Scraper does not expose arbitrary JavaScript execution, generic clicking or typing in this version.
 
-The dedicated MCP tab is created in the user's normal Chrome profile and reused for later requests. It is opened in the background, temporarily selected during the lazy-load/scrape operation, and the previously selected tab is restored when possible. `savage_mcp` supplies the inactivity timeout; the default is 90 seconds. Savage Scraper uses `chrome.alarms` to close the dedicated tab after that idle period so it does not remain open indefinitely.
+The dedicated MCP tab is created in the user's normal Chrome profile and reused for later requests. It is opened in the background, temporarily selected during the lazy-load/scrape operation, and the previously selected tab is restored when possible.
+
+`savage_mcp` controls the tab lifecycle. By default, `close_after_scrape` is `false`, so the tab remains reusable and closes after the inactivity timeout (90 seconds by default). If `close_after_scrape` is set to `true`, Savage Scraper closes the dedicated tab immediately after a successful `savage_open` or `savage_scrape` result has been captured; a later `savage_open` creates the tab again as needed. Failed operations keep the inactivity timer as a safety fallback. Savage Scraper uses `chrome.alarms` for that fallback timeout so the tab does not remain open indefinitely.
 
 ### Lazy-load pass used by MCP
 

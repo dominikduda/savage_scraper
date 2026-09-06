@@ -45,7 +45,7 @@ When MCP mode is enabled, Savage Scraper can open and scrape only HTTP/HTTPS URL
 
 Before an MCP capture, Savage Scraper may scroll the main page down and back up to trigger common lazy-loaded content, then restores the initial scroll position before running the normal scraper.
 
-Savage Scraper maintains at most one dedicated MCP agent tab and closes it after the inactivity timeout supplied by `savage_mcp`.
+Savage Scraper maintains at most one dedicated MCP agent tab. By default it closes that tab after the inactivity timeout supplied by `savage_mcp`. If the user enables `close_after_scrape` in the local `savage_mcp` configuration, Savage Scraper instead closes the dedicated tab immediately after a successful MCP scrape result has been captured; the inactivity timeout remains a safety fallback for failed operations.
 
 ## How data is used
 

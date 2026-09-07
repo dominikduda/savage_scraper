@@ -1,17 +1,60 @@
-<img src="https://raw.githubusercontent.com/dominikduda/savage_scraper/refs/heads/main/savage_scrapper_logo.png" width="500" />
+<img src="https://raw.githubusercontent.com/dominikduda/savage_scraper/refs/heads/main/savage_scraper_logo.png" width="500" />
 
 # savage_scraper
 
 Chrome extension that turns rendered web pages into simplified, LLM-friendly HTML.
 
-Savage Scraper has two modes built around the same scraper:
+Savage Scraper is built for a simple job: **give a human or an AI useful page context without turning the browser into a general automation target.**
+
+It has two modes built around the same scraper:
 
 * **Manual mode** — click the toolbar icon to scrape the active page and copy the result to the clipboard.
-* **Optional MCP mode** — connect to the locally running [savage_mcp](https://github.com/dominikduda/savage_mcp) server so an MCP-compatible AI client can open and scrape explicitly whitelisted sites in your normal Chrome browser.
+* **Optional MCP mode** — connect to the local [savage_mcp](https://github.com/dominikduda/savage_mcp) server so an MCP client can read explicitly allowlisted sites through the Chrome profile you already use.
 
-Manual behavior does not require MCP access and remains the default.
+Manual behavior remains the default and does not require MCP access.
 
-##### Why should you use it?
+## Why Savage Scraper?
+
+### Use the browser you already use
+
+MCP mode works through Savage Scraper installed in your normal Chrome profile. That means allowlisted pages are loaded with the browser session you already have: existing logins, cookies and application state continue to work normally.
+
+You do not need to maintain a separate headless browser, automation profile, duplicated login environment or dedicated browser machine just to give an AI read access to pages you can already access.
+
+Your browser also remains a normal browser for you. Savage MCP uses one dedicated agent tab for its work and restores the previously selected tab when possible; it does not take over your other tabs.
+
+### Intentionally limited browser authority
+
+Savage MCP is deliberately much smaller than a general browser-automation API. Its browser-facing workflow is limited to opening allowlisted URLs, scraping the dedicated tab and reporting status.
+
+It does **not** give the MCP client primitives for:
+
+* clicking elements;
+* typing into pages;
+* submitting forms;
+* executing arbitrary page JavaScript; or
+* unrestricted browser control.
+
+That limitation is intentional. If your goal is to let an AI **read selected authenticated websites**—for example documentation, Jira, GitHub, internal dashboards or admin interfaces—without also giving it a broad set of mutation commands, the smaller API is the feature.
+
+This does not make websites risk-free: loading a page can itself have application-specific effects. But it materially reduces the browser actions exposed to the MCP client compared with a full automation tool.
+
+### Explicit site boundary
+
+MCP navigation is restricted by the user-maintained `allowed_hosts` configuration. The allowlist is enforced by both `savage_mcp` and Savage Scraper.
+
+The result is a straightforward trust model:
+
+```text
+my normal Chrome session
++ sites I explicitly allow
++ read-oriented MCP actions
+= page context for my AI client
+```
+
+If you need an agent to click through workflows, fill forms, operate applications or debug the browser, use a full browser-automation tool instead. Savage Scraper intentionally focuses on extracting useful context.
+
+## Why the scraper itself?
 
 * One click immediately scrapes the active page and copies the result
 * Extracts rendered page content instead of dumping raw source HTML
@@ -25,13 +68,17 @@ Savage Scraper is useful when `Ctrl + A`, `Ctrl + C`, `Ctrl + V` is too clumsy a
 
 Instead of dumping everything, it keeps useful structure and removes a lot of implementation detail, so the result is smaller, cleaner and better suited for pasting into an LLM or returning to a local MCP client.
 
-##### Most importantly, it tries to preserve the information that matters while producing much less noise than copying the page source.
-
 Savage Scraper walks the rendered DOM, keeps useful semantic elements and attributes, filters generated/utility classes, removes hidden content when configured to do so and serializes the result into simplified HTML.
 
 The result is **not** intended to be a 1:1 copy of the original page HTML. It is intended to be a compact representation that is easier to use in an LLM, issue, note or other text-based workflow.
 
 ## Installation
+
+### Chrome Web Store
+
+[Install Savage Scraper from the Chrome Web Store](https://chromewebstore.google.com/detail/ejoijhjpdojdcnjppegojmkenidhblog).
+
+### Load unpacked
 
 Clone the repository:
 
@@ -64,7 +111,9 @@ The popup closes automatically after the configured delay. A progress bar shows 
 
 ## MCP integration
 
-MCP support is optional and requires the separate local [savage_mcp](https://github.com/dominikduda/savage_mcp) project. `savage_mcp` is a generic local stdio MCP server; OpenCode is supported, but the protocol is not OpenCode-specific.
+MCP support is optional and requires the separate local [savage_mcp](https://github.com/dominikduda/savage_mcp) project.
+
+The point of this integration is not to reproduce a full browser-automation framework. It lets an MCP client retrieve page context from explicitly allowlisted sites through your existing Chrome session while keeping the browser tool surface deliberately narrow.
 
 Architecture:
 

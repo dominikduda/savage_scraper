@@ -21,9 +21,12 @@ const RECONNECT_DELAY_MS = 5000;
 const KEEPALIVE_MS = 20000;
 const PAGE_SETTLE_MS = 500;
 const SCROLL_WAIT_MS = 350;
-const SCROLL_UP_WAIT_MS = 180;
+const SCROLL_RETURN_WAIT_MS = 180;
+const SCROLL_STEP_VIEWPORTS = 1.7;
 const SCROLL_MAX_STEPS = 40;
 const SCROLL_MAX_MS = 18000;
+const MAX_DOCUMENT_RETRIES = 3;
+const AGENT_OPERATION_MAX_MS = 60000;
 
 let socket = null;
 let socketAuthenticated = false;
@@ -33,6 +36,8 @@ let handshake = null;
 let allowedHosts = [];
 let agentTabCloseSeconds = DEFAULT_AGENT_TAB_CLOSE_SECONDS;
 let closeAfterScrape = false;
+let agentOperationQueue = Promise.resolve();
+let agentOperationActive = false;
 
 class UnavailablePageError extends Error {
   constructor(message) {
@@ -41,8 +46,61 @@ class UnavailablePageError extends Error {
   }
 }
 
+class TransientDocumentError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'TransientDocumentError';
+  }
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isTransientDocumentError(error) {
+  if (error instanceof TransientDocumentError) {
+    return true;
+  }
+
+  const text = (error instanceof Error ? error.message : String(error)).toLowerCase();
+
+  return [
+    'frame with id 0 was removed',
+    'frame 0 was removed',
+    'frame was removed',
+    'the frame was removed',
+    'document was unloaded',
+    'no document with id',
+    'no frame with id 0',
+    'document was discarded'
+  ].some(fragment => text.includes(fragment));
+}
+
+function remainingOperationMs(deadlineAt) {
+  const remaining = deadlineAt - Date.now();
+
+  if (remaining <= 0) {
+    throw new Error('Savage MCP browser operation exceeded the 60 second retry deadline.');
+  }
+
+  return remaining;
+}
+
+function enqueueAgentOperation(operation) {
+  const run = async () => {
+    agentOperationActive = true;
+    await chrome.alarms.clear(AGENT_TAB_CLOSE_ALARM);
+
+    try {
+      return await operation();
+    } finally {
+      agentOperationActive = false;
+    }
+  };
+
+  const result = agentOperationQueue.then(run, run);
+  agentOperationQueue = result.catch(() => {});
+  return result;
 }
 
 function normalizedBridgePort(value) {
@@ -183,7 +241,34 @@ async function getMcpSettings() {
   };
 }
 
-async function executeScraper(tab, settings) {
+async function getMainDocumentIdentity(tabId) {
+  const injectionResults = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => window.location.href
+  });
+
+  const mainResult = injectionResults?.[0];
+
+  if (!mainResult?.documentId) {
+    throw new TransientDocumentError('Could not identify the current main document.');
+  }
+
+  return {
+    documentId: mainResult.documentId,
+    url: String(mainResult.result || '')
+  };
+}
+
+async function assertAgentTabAllowed(rawUrl) {
+  try {
+    return assertAllowedUrl(rawUrl);
+  } catch (error) {
+    await closeAgentTab();
+    throw error;
+  }
+}
+
+async function executeScraper(tab, settings, documentId) {
   const protectedReason = protectedPageReason(tab.url);
 
   if (protectedReason) {
@@ -192,7 +277,10 @@ async function executeScraper(tab, settings) {
 
   try {
     await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: {
+        tabId: tab.id,
+        documentIds: [documentId]
+      },
       world: 'MAIN',
       func: pageSettings => {
         window.__SAVAGE_SCRAPER_EXTENSION_SETTINGS = pageSettings;
@@ -204,7 +292,10 @@ async function executeScraper(tab, settings) {
     });
 
     const injectionResults = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: {
+        tabId: tab.id,
+        documentIds: [documentId]
+      },
       world: 'MAIN',
       files: ['scraper-main.js']
     });
@@ -217,6 +308,10 @@ async function executeScraper(tab, settings) {
 
     return output;
   } catch (error) {
+    if (isTransientDocumentError(error)) {
+      throw error;
+    }
+
     if (isInjectionAccessError(error)) {
       throw new UnavailablePageError('Chrome does not allow Savage Scraper to access this page.');
     }
@@ -225,20 +320,27 @@ async function executeScraper(tab, settings) {
   }
 }
 
-async function lazyLoadMainPage(tabId) {
+async function lazyLoadMainPage(tabId, documentId, maxMs) {
   await chrome.scripting.executeScript({
-    target: { tabId },
+    target: {
+      tabId,
+      documentIds: [documentId]
+    },
     world: 'MAIN',
     func: async ({
       scrollWaitMs,
-      scrollUpWaitMs,
+      returnWaitMs,
+      stepViewports,
       maxSteps,
       maxMs
     }) => {
       const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
       const initialY = window.scrollY;
       const startedAt = Date.now();
-      const step = Math.max(300, Math.floor(window.innerHeight * 0.85));
+      const step = Math.max(
+        600,
+        Math.floor(window.innerHeight * stepViewports)
+      );
       let previousHeight = document.documentElement.scrollHeight;
       let stableBottomPasses = 0;
 
@@ -267,22 +369,18 @@ async function lazyLoadMainPage(tabId) {
           }
         }
 
-        for (let i = 0; i < maxSteps && window.scrollY > initialY; i += 1) {
-          window.scrollTo(0, Math.max(initialY, window.scrollY - step));
-          await wait(scrollUpWaitMs);
-        }
-
         window.scrollTo(0, initialY);
-        await wait(scrollUpWaitMs);
+        await wait(returnWaitMs);
       } finally {
         window.scrollTo(0, initialY);
       }
     },
     args: [{
       scrollWaitMs: SCROLL_WAIT_MS,
-      scrollUpWaitMs: SCROLL_UP_WAIT_MS,
+      returnWaitMs: SCROLL_RETURN_WAIT_MS,
+      stepViewports: SCROLL_STEP_VIEWPORTS,
       maxSteps: SCROLL_MAX_STEPS,
-      maxMs: SCROLL_MAX_MS
+      maxMs
     }]
   });
 }
@@ -404,7 +502,7 @@ async function withAgentTabSelected(tab, operation) {
   }
 }
 
-async function ensureAgentTab(url) {
+async function ensureAgentTab(url, deadlineAt) {
   let tab = await getAgentTab();
 
   if (tab?.id) {
@@ -417,32 +515,84 @@ async function ensureAgentTab(url) {
     await setStoredAgentTabId(tab.id);
   }
 
-  await waitForTabComplete(tab.id);
+  await waitForTabComplete(
+    tab.id,
+    Math.min(30000, remainingOperationMs(deadlineAt))
+  );
   return await chrome.tabs.get(tab.id);
 }
 
-async function performAgentScrape(tab) {
+async function performAgentScrape(tab, deadlineAt) {
   if (!(await hasMcpHostPermission())) {
     throw new Error('MCP website access is not enabled in Savage Scraper options.');
   }
 
-  const currentTab = await chrome.tabs.get(tab.id);
-
-  try {
-    assertAllowedUrl(currentTab.url);
-  } catch (error) {
-    await closeAgentTab();
-    throw error;
-  }
-
   const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
 
-  return await withAgentTabSelected(currentTab, async () => {
-    await lazyLoadMainPage(currentTab.id);
-    const refreshedTab = await chrome.tabs.get(currentTab.id);
-    assertAllowedUrl(refreshedTab.url);
-    return await executeScraper(refreshedTab, settings);
-  });
+  for (let retry = 0; retry <= MAX_DOCUMENT_RETRIES; retry += 1) {
+    remainingOperationMs(deadlineAt);
+
+    let currentTab = await chrome.tabs.get(tab.id);
+    await assertAgentTabAllowed(currentTab.url);
+
+    try {
+      await waitForTabComplete(
+        currentTab.id,
+        Math.min(30000, remainingOperationMs(deadlineAt))
+      );
+
+      currentTab = await chrome.tabs.get(currentTab.id);
+      await assertAgentTabAllowed(currentTab.url);
+
+      const identity = await getMainDocumentIdentity(currentTab.id);
+      await assertAgentTabAllowed(identity.url);
+
+      return await withAgentTabSelected(currentTab, async () => {
+        const scrollBudgetMs = Math.min(
+          SCROLL_MAX_MS,
+          remainingOperationMs(deadlineAt)
+        );
+
+        await lazyLoadMainPage(
+          currentTab.id,
+          identity.documentId,
+          scrollBudgetMs
+        );
+
+        remainingOperationMs(deadlineAt);
+
+        const afterScrollIdentity = await getMainDocumentIdentity(currentTab.id);
+
+        if (afterScrollIdentity.documentId !== identity.documentId) {
+          throw new TransientDocumentError(
+            'The main document changed during Savage Scraper processing.'
+          );
+        }
+
+        await assertAgentTabAllowed(afterScrollIdentity.url);
+
+        return await executeScraper(
+          {
+            ...currentTab,
+            url: afterScrollIdentity.url
+          },
+          settings,
+          identity.documentId
+        );
+      });
+    } catch (error) {
+      if (!isTransientDocumentError(error) || retry >= MAX_DOCUMENT_RETRIES) {
+        throw error;
+      }
+
+      await waitForTabComplete(
+        tab.id,
+        Math.min(30000, remainingOperationMs(deadlineAt))
+      );
+    }
+  }
+
+  throw new Error('Savage Scraper exhausted its document retry budget.');
 }
 
 async function handleOpen(url) {
@@ -451,11 +601,12 @@ async function handleOpen(url) {
   }
 
   const parsedUrl = assertAllowedUrl(url);
-  const tab = await ensureAgentTab(parsedUrl.href);
+  const deadlineAt = Date.now() + AGENT_OPERATION_MAX_MS;
   let scrapeSucceeded = false;
 
   try {
-    const output = await performAgentScrape(tab);
+    const tab = await ensureAgentTab(parsedUrl.href, deadlineAt);
+    const output = await performAgentScrape(tab, deadlineAt);
     const finalTab = await chrome.tabs.get(tab.id);
 
     const result = {
@@ -477,10 +628,12 @@ async function handleScrape() {
   if (!tab?.id) {
     throw new Error('No Savage MCP agent tab exists. Call savage_open first.');
   }
+
+  const deadlineAt = Date.now() + AGENT_OPERATION_MAX_MS;
   let scrapeSucceeded = false;
 
   try {
-    const output = await performAgentScrape(tab);
+    const output = await performAgentScrape(tab, deadlineAt);
     const finalTab = await chrome.tabs.get(tab.id);
 
     const result = {
@@ -689,7 +842,11 @@ async function handleSocketMessage(event, settings) {
     allowedHosts = normalizeHostPatterns(message.allowedHosts || []);
     agentTabCloseSeconds = normalizedCloseSeconds(message.agentTabCloseSeconds);
     closeAfterScrape = message.closeAfterScrape === true;
-    await armAgentTabClose();
+
+    if (!agentOperationActive) {
+      await armAgentTabClose();
+    }
+
     return;
   }
 
@@ -703,10 +860,14 @@ async function handleSocketMessage(event, settings) {
 
       switch (message.action) {
         case 'open':
-          result = await handleOpen(message.payload?.url);
+          result = await enqueueAgentOperation(
+            () => handleOpen(message.payload?.url)
+          );
           break;
         case 'scrape':
-          result = await handleScrape();
+          result = await enqueueAgentOperation(
+            () => handleScrape()
+          );
           break;
         case 'status':
           result = await handleStatus();
@@ -792,7 +953,7 @@ async function refreshBridgeConnection() {
 }
 
 chrome.alarms.onAlarm.addListener(alarm => {
-  if (alarm.name === AGENT_TAB_CLOSE_ALARM) {
+  if (alarm.name === AGENT_TAB_CLOSE_ALARM && !agentOperationActive) {
     void closeAgentTab();
   }
 

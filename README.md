@@ -157,6 +157,8 @@ Savage Scraper does not expose arbitrary JavaScript execution, generic clicking 
 
 The dedicated MCP tab is created in the user's normal Chrome profile and reused for later requests. It is opened in the background, temporarily selected during the lazy-load/scrape operation, and the previously selected tab is restored when possible.
 
+Open/scrape operations are serialized inside Savage Scraper so concurrent MCP requests cannot navigate, scrape or close the single agent tab at the same time. The extension also tracks Chrome's main-document identity for each scrape. If the page replaces its main document during scrolling or injection, Savage Scraper retries that transient document change up to 3 times, subject to a 60-second operation/retry budget.
+
 `savage_mcp` controls the tab lifecycle. By default, `close_after_scrape` is `false`, so the tab remains reusable and closes after the inactivity timeout (90 seconds by default). If `close_after_scrape` is set to `true`, Savage Scraper closes the dedicated tab immediately after a successful `savage_open` or `savage_scrape` result has been captured; a later `savage_open` creates the tab again as needed. Failed operations keep the inactivity timer as a safety fallback. Savage Scraper uses `chrome.alarms` for that fallback timeout so the tab does not remain open indefinitely.
 
 ### Lazy-load pass used by MCP
@@ -164,12 +166,11 @@ The dedicated MCP tab is created in the user's normal Chrome profile and reused 
 Before an MCP scrape, Savage Scraper performs a deliberately simple main-page scroll pass:
 
 1. remember the current main-page scroll position;
-2. scroll downward in viewport-sized steps;
+2. scroll downward in roughly 1.7-viewport steps (about twice the previous step size);
 3. wait briefly after each step so common lazy-loaded content can appear;
 4. continue when the document grows, with hard step/time limits;
-5. walk upward again;
-6. restore the exact starting scroll position;
-7. run the normal Savage Scraper extraction.
+5. jump directly back to the exact starting scroll position;
+6. run the normal Savage Scraper extraction.
 
 Only the **main page scroll** is manipulated. Nested scroll containers are not traversed. This is intended to trigger common lazy loading; it is not a universal solution for every virtualized UI.
 

@@ -21,7 +21,7 @@ const RECONNECT_DELAY_MS = 5000;
 const KEEPALIVE_MS = 20000;
 const PAGE_SETTLE_MS = 500;
 const SCROLL_WAIT_MS = 350;
-const SCROLL_RETURN_WAIT_MS = 180;
+const SCROLL_RETURN_MAX_MS = 1500;
 const SCROLL_STEP_VIEWPORTS = 1.7;
 const SCROLL_MAX_STEPS = 40;
 const SCROLL_MAX_MS = 18000;
@@ -329,13 +329,15 @@ async function lazyLoadMainPage(tabId, documentId, maxMs) {
     world: 'MAIN',
     func: async ({
       scrollWaitMs,
-      returnWaitMs,
+      returnMaxMs,
       stepViewports,
       maxSteps,
       maxMs
     }) => {
       const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
       const initialY = window.scrollY;
+      const initialX = window.scrollX;
       const startedAt = Date.now();
       const step = Math.max(
         600,
@@ -344,13 +346,41 @@ async function lazyLoadMainPage(tabId, documentId, maxMs) {
       let previousHeight = document.documentElement.scrollHeight;
       let stableBottomPasses = 0;
 
+      async function restoreScrollPosition(targetX, targetY) {
+        const restoreStartedAt = Date.now();
+
+        window.scrollTo({
+          top: targetY,
+          left: targetX,
+          behavior: 'instant'
+        });
+
+        while (
+          Math.abs(window.scrollY - targetY) > 2 &&
+          Date.now() - restoreStartedAt < returnMaxMs
+        ) {
+          await nextFrame();
+        }
+
+        window.scrollTo({
+          top: targetY,
+          left: targetX,
+          behavior: 'instant'
+        });
+        await nextFrame();
+      }
+
       try {
         for (let i = 0; i < maxSteps && Date.now() - startedAt < maxMs; i += 1) {
           const beforeHeight = document.documentElement.scrollHeight;
           const maxY = Math.max(0, beforeHeight - window.innerHeight);
           const nextY = Math.min(maxY, window.scrollY + step);
 
-          window.scrollTo(0, nextY);
+          window.scrollTo({
+            top: nextY,
+            left: initialX,
+            behavior: 'instant'
+          });
           await wait(scrollWaitMs);
 
           const afterHeight = document.documentElement.scrollHeight;
@@ -368,16 +398,13 @@ async function lazyLoadMainPage(tabId, documentId, maxMs) {
             break;
           }
         }
-
-        window.scrollTo(0, initialY);
-        await wait(returnWaitMs);
       } finally {
-        window.scrollTo(0, initialY);
+        await restoreScrollPosition(initialX, initialY);
       }
     },
     args: [{
       scrollWaitMs: SCROLL_WAIT_MS,
-      returnWaitMs: SCROLL_RETURN_WAIT_MS,
+      returnMaxMs: SCROLL_RETURN_MAX_MS,
       stepViewports: SCROLL_STEP_VIEWPORTS,
       maxSteps: SCROLL_MAX_STEPS,
       maxMs

@@ -6,7 +6,9 @@ const DEFAULT_SETTINGS = {
 const MCP_DEFAULTS = {
   mcpEnabled: false,
   bridgeToken: '',
-  bridgePort: 8765
+  bridgePort: 8765,
+  bottomConfirmationPasses: 2,
+  bottomConfirmationMaxMs: 2600
 };
 
 const MCP_PERMISSION_ORIGINS = [
@@ -19,9 +21,15 @@ const BRIDGE_RECONNECT_ALARM = 'savage_mcp_bridge_reconnect';
 const DEFAULT_AGENT_TAB_CLOSE_SECONDS = 90;
 const RECONNECT_DELAY_MS = 5000;
 const KEEPALIVE_MS = 20000;
-const PAGE_SETTLE_MS = 500;
-const SCROLL_WAIT_MS = 350;
-const SCROLL_RETURN_MAX_MS = 1500;
+const INITIAL_SETTLE_MIN_MS = 400;
+const INITIAL_SETTLE_QUIET_MS = 500;
+const INITIAL_SETTLE_MAX_MS = 3000;
+const SCROLL_SETTLE_MIN_MS = 200;
+const SCROLL_SETTLE_QUIET_MS = 350;
+const SCROLL_SETTLE_MAX_MS = 1200;
+const BOTTOM_SETTLE_MIN_MS = 350;
+const BOTTOM_SETTLE_QUIET_MS = 500;
+const SCROLL_RETURN_MAX_MS = 3000;
 const SCROLL_STEP_VIEWPORTS = 1.7;
 const SCROLL_MAX_STEPS = 40;
 const SCROLL_MAX_MS = 18000;
@@ -108,6 +116,20 @@ function normalizedBridgePort(value) {
   return Number.isInteger(numeric) && numeric >= 1024 && numeric <= 65535
     ? numeric
     : MCP_DEFAULTS.bridgePort;
+}
+
+function normalizedBottomConfirmationPasses(value) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 1 && numeric <= 5
+    ? numeric
+    : MCP_DEFAULTS.bottomConfirmationPasses;
+}
+
+function normalizedBottomConfirmationMaxMs(value) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 500 && numeric <= 10000
+    ? numeric
+    : MCP_DEFAULTS.bottomConfirmationMaxMs;
 }
 
 function normalizedCloseSeconds(value) {
@@ -241,6 +263,19 @@ async function getMcpSettings() {
   };
 }
 
+async function getMcpScrollSettings() {
+  const stored = await chrome.storage.local.get(MCP_DEFAULTS);
+
+  return {
+    bottomConfirmationPasses: normalizedBottomConfirmationPasses(
+      stored.bottomConfirmationPasses
+    ),
+    bottomConfirmationMaxMs: normalizedBottomConfirmationMaxMs(
+      stored.bottomConfirmationMaxMs
+    )
+  };
+}
+
 async function getMainDocumentIdentity(tabId) {
   const injectionResults = await chrome.scripting.executeScript({
     target: { tabId },
@@ -320,7 +355,7 @@ async function executeScraper(tab, settings, documentId) {
   }
 }
 
-async function lazyLoadMainPage(tabId, documentId, maxMs) {
+async function lazyLoadMainPage(tabId, documentId, operationMaxMs, scrollSettings) {
   await chrome.scripting.executeScript({
     target: {
       tabId,
@@ -328,26 +363,111 @@ async function lazyLoadMainPage(tabId, documentId, maxMs) {
     },
     world: 'MAIN',
     func: async ({
-      scrollWaitMs,
+      initialMinMs,
+      initialQuietMs,
+      initialMaxMs,
+      scrollMinMs,
+      scrollQuietMs,
+      scrollMaxWaitMs,
+      bottomMinMs,
+      bottomQuietMs,
+      bottomMaxMs,
+      bottomPasses,
       returnMaxMs,
       stepViewports,
       maxSteps,
-      maxMs
+      scrollMaxMs,
+      operationMaxMs
     }) => {
       const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
       const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
-      const initialY = window.scrollY;
-      const initialX = window.scrollX;
-      const startedAt = Date.now();
-      const step = Math.max(
-        600,
-        Math.floor(window.innerHeight * stepViewports)
-      );
-      let previousHeight = document.documentElement.scrollHeight;
-      let stableBottomPasses = 0;
+      const operationStartedAt = performance.now();
+      let lastActivityAt = operationStartedAt;
+      let lastHeight = document.documentElement.scrollHeight;
+      let initialX = null;
+      let initialY = null;
+
+      function markActivity() {
+        lastActivityAt = performance.now();
+      }
+
+      const mutationObserver = new MutationObserver(markActivity);
+      mutationObserver.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: [
+          'class',
+          'style',
+          'hidden',
+          'aria-hidden',
+          'aria-busy',
+          'open'
+        ]
+      });
+
+      let resourceObserver = null;
+
+      try {
+        resourceObserver = new PerformanceObserver(list => {
+          if (list.getEntries().some(entry =>
+            entry.initiatorType === 'fetch' ||
+            entry.initiatorType === 'xmlhttprequest'
+          )) {
+            markActivity();
+          }
+        });
+        resourceObserver.observe({
+          type: 'resource',
+          buffered: false
+        });
+      } catch {
+        // Resource Timing observation is an enhancement; DOM/height settling still works.
+      }
+
+      async function waitForQuiet(minMs, quietMs, maxWaitMs) {
+        const startedAt = performance.now();
+        const boundedMaxMs = Math.max(0, maxWaitMs);
+
+        if (boundedMaxMs === 0) {
+          return;
+        }
+
+        lastActivityAt = startedAt;
+        lastHeight = document.documentElement.scrollHeight;
+
+        while (true) {
+          const now = performance.now();
+          const currentHeight = document.documentElement.scrollHeight;
+
+          if (Math.abs(currentHeight - lastHeight) > 1) {
+            lastHeight = currentHeight;
+            lastActivityAt = now;
+          }
+
+          const elapsed = now - startedAt;
+
+          if (
+            elapsed >= minMs &&
+            now - lastActivityAt >= quietMs
+          ) {
+            return;
+          }
+
+          if (elapsed >= boundedMaxMs) {
+            return;
+          }
+
+          await wait(Math.min(
+            50,
+            Math.max(1, boundedMaxMs - elapsed)
+          ));
+        }
+      }
 
       async function restoreScrollPosition(targetX, targetY) {
-        const restoreStartedAt = Date.now();
+        const restoreStartedAt = performance.now();
 
         window.scrollTo({
           top: targetY,
@@ -357,7 +477,7 @@ async function lazyLoadMainPage(tabId, documentId, maxMs) {
 
         while (
           Math.abs(window.scrollY - targetY) > 2 &&
-          Date.now() - restoreStartedAt < returnMaxMs
+          performance.now() - restoreStartedAt < returnMaxMs
         ) {
           await nextFrame();
         }
@@ -371,17 +491,67 @@ async function lazyLoadMainPage(tabId, documentId, maxMs) {
       }
 
       try {
-        for (let i = 0; i < maxSteps && Date.now() - startedAt < maxMs; i += 1) {
+        const initialBudgetMs = Math.min(
+          initialMaxMs,
+          Math.max(0, operationMaxMs)
+        );
+
+        await waitForQuiet(
+          initialMinMs,
+          initialQuietMs,
+          initialBudgetMs
+        );
+
+        initialX = window.scrollX;
+        initialY = window.scrollY;
+
+        const elapsedBeforeScroll = performance.now() - operationStartedAt;
+        const scrollBudgetMs = Math.min(
+          scrollMaxMs,
+          Math.max(0, operationMaxMs - elapsedBeforeScroll)
+        );
+        const scrollStartedAt = performance.now();
+        const step = Math.max(
+          600,
+          Math.floor(window.innerHeight * stepViewports)
+        );
+        let previousHeight = document.documentElement.scrollHeight;
+        let stableBottomPasses = 0;
+
+        for (
+          let i = 0;
+          i < maxSteps && performance.now() - scrollStartedAt < scrollBudgetMs;
+          i += 1
+        ) {
           const beforeHeight = document.documentElement.scrollHeight;
           const maxY = Math.max(0, beforeHeight - window.innerHeight);
           const nextY = Math.min(maxY, window.scrollY + step);
+          const apparentBottom = nextY >= maxY - 2;
 
           window.scrollTo({
             top: nextY,
             left: initialX,
             behavior: 'instant'
           });
-          await wait(scrollWaitMs);
+
+          const remainingScrollMs = Math.max(
+            0,
+            scrollBudgetMs - (performance.now() - scrollStartedAt)
+          );
+
+          if (apparentBottom) {
+            await waitForQuiet(
+              bottomMinMs,
+              bottomQuietMs,
+              Math.min(bottomMaxMs, remainingScrollMs)
+            );
+          } else {
+            await waitForQuiet(
+              scrollMinMs,
+              scrollQuietMs,
+              Math.min(scrollMaxWaitMs, remainingScrollMs)
+            );
+          }
 
           const afterHeight = document.documentElement.scrollHeight;
           const atBottom = window.scrollY + window.innerHeight >= afterHeight - 4;
@@ -394,20 +564,35 @@ async function lazyLoadMainPage(tabId, documentId, maxMs) {
 
           previousHeight = Math.max(beforeHeight, afterHeight);
 
-          if (stableBottomPasses >= 2) {
+          if (stableBottomPasses >= bottomPasses) {
             break;
           }
         }
       } finally {
-        await restoreScrollPosition(initialX, initialY);
+        mutationObserver.disconnect();
+        resourceObserver?.disconnect();
+
+        if (initialX !== null && initialY !== null) {
+          await restoreScrollPosition(initialX, initialY);
+        }
       }
     },
     args: [{
-      scrollWaitMs: SCROLL_WAIT_MS,
+      initialMinMs: INITIAL_SETTLE_MIN_MS,
+      initialQuietMs: INITIAL_SETTLE_QUIET_MS,
+      initialMaxMs: INITIAL_SETTLE_MAX_MS,
+      scrollMinMs: SCROLL_SETTLE_MIN_MS,
+      scrollQuietMs: SCROLL_SETTLE_QUIET_MS,
+      scrollMaxWaitMs: SCROLL_SETTLE_MAX_MS,
+      bottomMinMs: BOTTOM_SETTLE_MIN_MS,
+      bottomQuietMs: BOTTOM_SETTLE_QUIET_MS,
+      bottomMaxMs: scrollSettings.bottomConfirmationMaxMs,
+      bottomPasses: scrollSettings.bottomConfirmationPasses,
       returnMaxMs: SCROLL_RETURN_MAX_MS,
       stepViewports: SCROLL_STEP_VIEWPORTS,
       maxSteps: SCROLL_MAX_STEPS,
-      maxMs
+      scrollMaxMs: SCROLL_MAX_MS,
+      operationMaxMs
     }]
   });
 }
@@ -482,7 +667,6 @@ async function waitForTabComplete(tabId, timeoutMs = 30000) {
   const initial = await chrome.tabs.get(tabId);
 
   if (initial.status === 'complete') {
-    await sleep(PAGE_SETTLE_MS);
     return;
   }
 
@@ -502,8 +686,6 @@ async function waitForTabComplete(tabId, timeoutMs = 30000) {
 
     chrome.tabs.onUpdated.addListener(listener);
   });
-
-  await sleep(PAGE_SETTLE_MS);
 }
 
 async function withAgentTabSelected(tab, operation) {
@@ -555,6 +737,7 @@ async function performAgentScrape(tab, deadlineAt) {
   }
 
   const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
+  const scrollSettings = await getMcpScrollSettings();
 
   for (let retry = 0; retry <= MAX_DOCUMENT_RETRIES; retry += 1) {
     remainingOperationMs(deadlineAt);
@@ -575,15 +758,11 @@ async function performAgentScrape(tab, deadlineAt) {
       await assertAgentTabAllowed(identity.url);
 
       return await withAgentTabSelected(currentTab, async () => {
-        const scrollBudgetMs = Math.min(
-          SCROLL_MAX_MS,
-          remainingOperationMs(deadlineAt)
-        );
-
         await lazyLoadMainPage(
           currentTab.id,
           identity.documentId,
-          scrollBudgetMs
+          remainingOperationMs(deadlineAt),
+          scrollSettings
         );
 
         remainingOperationMs(deadlineAt);

@@ -1,6 +1,6 @@
 # Savage Scraper Privacy Policy
 
-Effective date: September 6, 2026
+Effective date: September 9, 2026
 
 Savage Scraper is a Chrome extension that converts rendered web-page content into a simplified HTML representation for two closely related user-facing workflows:
 
@@ -18,7 +18,10 @@ When Savage Scraper captures a page, the extension may process data present on t
 - useful element attributes such as links, labels and selected ARIA information;
 - current values and state of ordinary form controls;
 - xterm.js terminal content when it is accessible to the page and the extension;
-- hidden or collapsed page content when the user explicitly enables the **Include hidden content** setting.
+- hidden or collapsed page content when the user explicitly enables the **Include hidden content** setting; and
+- in MCP mode, transient page-settling signals such as relevant DOM mutations, document-height changes and whether browser resource entries report a `fetch` or XHR completion.
+
+The MCP page-settling logic does not read request or response bodies for this purpose and does not persist or return the observed settling signals.
 
 Password input values are never included. `<input type="hidden">` controls are excluded entirely, including when **Include hidden content** is enabled.
 
@@ -43,7 +46,7 @@ To enable it, the user must:
 
 When MCP mode is enabled, Savage Scraper can open and scrape only HTTP/HTTPS URLs permitted by the `allowed_hosts` configuration received from the authenticated local `savage_mcp` process. Savage Scraper validates the whitelist again on the extension side before opening or scraping a page.
 
-Before an MCP capture, Savage Scraper may scroll the main page down and back up to trigger common lazy-loaded content, then restores the initial scroll position before running the normal scraper.
+Before an MCP capture, Savage Scraper waits briefly after Chrome reports the normal page load complete and during its main-page lazy-load scroll pass. It uses bounded quiet windows based on relevant DOM mutations, document-height changes and `fetch`/XHR resource completions so dynamically rendered content has an opportunity to appear. Savage Scraper then restores the initial main-page scroll position before running the normal scraper. Nested scroll containers are not traversed.
 
 Savage Scraper maintains at most one dedicated MCP agent tab. By default it closes that tab after the inactivity timeout supplied by `savage_mcp`. If the user enables `close_after_scrape` in the local `savage_mcp` configuration, Savage Scraper instead closes the dedicated tab immediately after a successful MCP scrape result has been captured; the inactivity timeout remains a safety fallback for failed operations.
 
@@ -75,8 +78,10 @@ Savage Scraper stores user-configurable settings in `chrome.storage.local`, incl
 - whether generated HTML should be pretty-formatted;
 - the popup auto-close delay;
 - whether MCP integration is enabled;
-- the local MCP bridge port; and
-- the local MCP bridge authentication token.
+- the local MCP bridge port;
+- the local MCP bridge authentication token;
+- the MCP bottom-confirmation pass count; and
+- the MCP bottom-confirmation maximum wait.
 
 The dedicated MCP agent-tab identifier is stored only in `chrome.storage.session` so the Manifest V3 service worker can continue managing that tab while the browser session is active.
 
@@ -87,7 +92,7 @@ These settings remain on the user's device until the user changes them, clears e
 Savage Scraper uses the following required Chrome extension permissions:
 
 - `activeTab` — temporary access to the current tab after the user explicitly invokes manual scraping;
-- `scripting` — to run the packaged scraper and MCP lazy-load scroll code on a page the extension is authorized to access;
+- `scripting` — to run the packaged scraper and MCP page-settling/lazy-load scroll code on a page the extension is authorized to access;
 - `storage` — to store extension preferences, local MCP bridge settings and the session-scoped MCP tab identifier;
 - `clipboardWrite` — to copy manual capture output to the user's clipboard;
 - `alarms` — to reliably close the dedicated MCP agent tab after inactivity and to maintain/recover the explicitly enabled local MCP bridge across Manifest V3 service-worker suspension.

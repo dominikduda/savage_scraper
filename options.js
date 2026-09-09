@@ -1,7 +1,9 @@
 const MCP_DEFAULTS = {
   mcpEnabled: false,
   bridgeToken: '',
-  bridgePort: 8765
+  bridgePort: 8765,
+  bottomConfirmationPasses: 2,
+  bottomConfirmationMaxMs: 2600
 };
 
 const MCP_PERMISSION_ORIGINS = [
@@ -11,6 +13,8 @@ const MCP_PERMISSION_ORIGINS = [
 
 const bridgePort = document.getElementById('bridgePort');
 const bridgeToken = document.getElementById('bridgeToken');
+const bottomConfirmationPasses = document.getElementById('bottomConfirmationPasses');
+const bottomConfirmationMaxMs = document.getElementById('bottomConfirmationMaxMs');
 const saveButton = document.getElementById('saveButton');
 const enableButton = document.getElementById('enableButton');
 const disableButton = document.getElementById('disableButton');
@@ -40,15 +44,37 @@ function normalizedToken() {
   return value;
 }
 
+function normalizedBottomConfirmationPasses() {
+  const value = Number(bottomConfirmationPasses.value);
+
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    throw new Error('Bottom confirmation passes must be between 1 and 5.');
+  }
+
+  return value;
+}
+
+function normalizedBottomConfirmationMaxMs() {
+  const value = Number(bottomConfirmationMaxMs.value);
+
+  if (!Number.isInteger(value) || value < 500 || value > 10000) {
+    throw new Error('Bottom confirmation maximum wait must be between 500 and 10000 ms.');
+  }
+
+  return value;
+}
+
 function setMessage(text, isError = false) {
   message.textContent = text;
   message.style.color = isError ? 'crimson' : '';
 }
 
-async function saveBridgeSettings() {
+async function saveMcpSettings() {
   await chrome.storage.local.set({
     bridgePort: normalizedPort(),
-    bridgeToken: normalizedToken()
+    bridgeToken: normalizedToken(),
+    bottomConfirmationPasses: normalizedBottomConfirmationPasses(),
+    bottomConfirmationMaxMs: normalizedBottomConfirmationMaxMs()
   });
 }
 
@@ -78,13 +104,19 @@ async function initialize() {
   const stored = await chrome.storage.local.get(MCP_DEFAULTS);
   bridgePort.value = String(stored.bridgePort || MCP_DEFAULTS.bridgePort);
   bridgeToken.value = stored.bridgeToken || '';
+  bottomConfirmationPasses.value = String(
+    stored.bottomConfirmationPasses ?? MCP_DEFAULTS.bottomConfirmationPasses
+  );
+  bottomConfirmationMaxMs.value = String(
+    stored.bottomConfirmationMaxMs ?? MCP_DEFAULTS.bottomConfirmationMaxMs
+  );
   await refreshStatus();
 }
 
 saveButton.addEventListener('click', async () => {
   try {
-    await saveBridgeSettings();
-    setMessage('Bridge settings saved.');
+    await saveMcpSettings();
+    setMessage('MCP settings saved.');
     await refreshStatus();
   } catch (error) {
     setMessage(error.message, true);
@@ -93,7 +125,7 @@ saveButton.addEventListener('click', async () => {
 
 enableButton.addEventListener('click', async () => {
   try {
-    await saveBridgeSettings();
+    await saveMcpSettings();
 
     const granted = await chrome.permissions.request({
       origins: MCP_PERMISSION_ORIGINS

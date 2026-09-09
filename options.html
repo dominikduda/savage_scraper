@@ -28,8 +28,36 @@
         <code>bridge_token</code> here. The token stays in Chrome local extension storage.
       </p>
 
+      <label for="bottomConfirmationPasses">Bottom confirmation passes</label>
+      <input
+        id="bottomConfirmationPasses"
+        type="number"
+        min="1"
+        max="5"
+        step="1"
+        inputmode="numeric"
+      />
+      <p class="hint">
+        Consecutive stable-bottom checks required before MCP scrolling finishes.
+        Default: 2.
+      </p>
+
+      <label for="bottomConfirmationMaxMs">Bottom confirmation maximum wait (ms)</label>
+      <input
+        id="bottomConfirmationMaxMs"
+        type="number"
+        min="500"
+        max="10000"
+        step="100"
+        inputmode="numeric"
+      />
+      <p class="hint">
+        Maximum dynamic settle time for each bottom confirmation check.
+        Default: 2600 ms.
+      </p>
+
       <div class="buttons">
-        <button id="saveButton" type="button">Save bridge settings</button>
+        <button id="saveButton" type="button">Save MCP settings</button>
         <button id="enableButton" type="button">Enable MCP website access</button>
         <button id="disableButton" type="button" class="secondary">Disable MCP access</button>
       </div>

@@ -163,14 +163,19 @@ Open/scrape operations are serialized inside Savage Scraper so concurrent MCP re
 
 ### Lazy-load pass used by MCP
 
-Before an MCP scrape, Savage Scraper performs a deliberately simple main-page scroll pass:
+Before an MCP scrape, Savage Scraper performs a bounded main-page settling and scroll pass:
 
-1. remember the current main-page scroll position;
-2. scroll downward in roughly 1.7-viewport steps (about twice the previous step size);
-3. wait briefly after each step so common lazy-loaded content can appear;
-4. continue when the document grows, with hard step/time limits;
-5. jump directly back to the exact starting scroll position;
-6. run the normal Savage Scraper extraction.
+1. after Chrome reports the page load complete, briefly wait for fetch/XHR completions, meaningful DOM changes and document-height changes to become quiet;
+2. remember the current main-page scroll position;
+3. scroll downward in roughly 1.7-viewport steps (about twice the previous step size), forcing each step to be non-smooth;
+4. after each step, dynamically wait for the same page-activity signals to settle instead of using one fixed delay;
+5. when the apparent bottom is reached, require consecutive stable-bottom confirmations before finishing;
+6. jump directly back to the exact starting scroll position and verify that the position is restored;
+7. run the normal Savage Scraper extraction.
+
+The initial settle waits at least 400 ms, requires a 500 ms quiet window and is capped at 3000 ms. Normal scroll steps use a 200 ms minimum, 350 ms quiet window and 1200 ms maximum. Bottom checks use a 350 ms minimum and 500 ms quiet window; their maximum wait and required confirmation count are configurable in Extension options.
+
+The settling observers do not replace or monkey-patch page `fetch`/XHR functions and do not inspect request or response bodies. They observe resource-completion type/timing plus DOM/height changes only.
 
 Only the **main page scroll** is manipulated. Nested scroll containers are not traversed. This is intended to trigger common lazy loading; it is not a universal solution for every virtualized UI.
 
@@ -205,7 +210,19 @@ Auto-close: 5 seconds
 Range: 2-15 seconds
 ```
 
-Changing a setting resets the close timer. Settings are persisted locally using `chrome.storage.local`.
+#### MCP bottom confirmation
+
+MCP scrolling requires consecutive stable-bottom checks before it concludes that the main page has finished growing. Both the number of checks and the maximum dynamic wait for each bottom check can be adjusted in Extension options.
+
+```
+Bottom confirmation passes: 2
+Range: 1-5
+
+Bottom confirmation maximum wait: 2600 ms
+Range: 500-10000 ms
+```
+
+Changing a popup setting resets the close timer. Settings are persisted locally using `chrome.storage.local`.
 
 ## What gets extracted
 

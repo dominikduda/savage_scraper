@@ -9,7 +9,7 @@ Savage Scraper is built for a simple job: **give a human or an AI useful page co
 It has two modes built around the same scraper:
 
 * **Manual mode** — click the toolbar icon to scrape the active page and copy the result to the clipboard.
-* **Optional MCP mode** — connect to the local [savage_mcp](https://github.com/dominikduda/savage_mcp) server so an MCP client can read explicitly allowlisted sites through the Chrome profile you already use.
+* **Optional MCP mode** — connect to the local [Savage MCP](https://github.com/dominikduda/savage_mcp) server so an MCP client can read explicitly allowlisted sites through the Chrome profile you already use.
 
 Manual behavior remains the default and does not require MCP access.
 
@@ -41,7 +41,7 @@ This does not make websites risk-free: loading a page can itself have applicatio
 
 ### Explicit site boundary
 
-MCP navigation is restricted by the user-maintained `allowed_hosts` configuration and can be narrowed further with optional per-host `allowed_paths` rules. The combined policy is enforced by both `savage_mcp` and Savage Scraper.
+MCP navigation is restricted by the user-maintained `allowed_hosts` configuration and can be narrowed further with optional per-host `allowed_paths` rules. The combined policy is enforced by both Savage MCP and Savage Scraper.
 
 If an allowed host has no matching `allowed_paths` entry, or its entry is an empty array, all paths on that already-allowed host remain available. A non-empty entry can allow exact paths or recursive prefixes ending in `/**`. When overlapping host patterns match, the most specific matching host pattern controls the path policy.
 

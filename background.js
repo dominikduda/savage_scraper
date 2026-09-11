@@ -42,6 +42,7 @@ let keepaliveTimer = null;
 let reconnectTimer = null;
 let handshake = null;
 let allowedHosts = [];
+let allowedPaths = {};
 let agentTabCloseSeconds = DEFAULT_AGENT_TAB_CLOSE_SECONDS;
 let closeAfterScrape = false;
 let agentOperationQueue = Promise.resolve();
@@ -171,19 +172,119 @@ function normalizeHostPatterns(patterns) {
   return [...new Set(patterns.map(normalizeHostPattern))];
 }
 
-function isHostnameAllowed(hostname) {
+function hostPatternMatches(hostname, pattern) {
+  if (pattern.startsWith('*.')) {
+    const suffix = pattern.slice(2);
+    return hostname !== suffix && hostname.endsWith(`.${suffix}`);
+  }
+
+  return hostname === pattern;
+}
+
+function matchingHostPattern(hostname) {
   const normalizedHostname = String(hostname || '')
     .trim()
     .toLowerCase()
     .replace(/\.$/, '');
 
-  return allowedHosts.some(pattern => {
-    if (pattern.startsWith('*.')) {
-      const suffix = pattern.slice(2);
-      return normalizedHostname !== suffix && normalizedHostname.endsWith(`.${suffix}`);
+  if (!normalizedHostname) {
+    return null;
+  }
+
+  const matches = allowedHosts.filter(pattern =>
+    hostPatternMatches(normalizedHostname, pattern)
+  );
+
+  matches.sort((a, b) => {
+    const aExact = a.startsWith('*.') ? 0 : 1;
+    const bExact = b.startsWith('*.') ? 0 : 1;
+
+    if (aExact !== bExact) {
+      return bExact - aExact;
     }
 
-    return normalizedHostname === pattern;
+    return b.length - a.length;
+  });
+
+  return matches[0] ?? null;
+}
+
+function isHostnameAllowed(hostname) {
+  return matchingHostPattern(hostname) !== null;
+}
+
+function normalizePathPattern(pattern) {
+  if (typeof pattern !== 'string') {
+    throw new Error('Path patterns must be strings.');
+  }
+
+  const normalized = pattern.trim();
+
+  if (!normalized || !normalized.startsWith('/')) {
+    throw new Error(`Path pattern must start with "/": ${pattern}`);
+  }
+
+  if (normalized.includes('?') || normalized.includes('#')) {
+    throw new Error(`Path pattern must not contain a query or fragment: ${pattern}`);
+  }
+
+  if (normalized.endsWith('/**')) {
+    const base = normalized.slice(0, -3);
+
+    if (base.includes('*')) {
+      throw new Error(`Only a trailing /** wildcard is supported in path patterns: ${pattern}`);
+    }
+  } else if (normalized.includes('*')) {
+    throw new Error(`Only a trailing /** wildcard is supported in path patterns: ${pattern}`);
+  }
+
+  return normalized;
+}
+
+function normalizeAllowedPaths(value, hostPatterns) {
+  if (value == null) {
+    return {};
+  }
+
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('allowedPaths must be an object keyed by allowed host pattern.');
+  }
+
+  const hostSet = new Set(hostPatterns);
+  const entries = [];
+
+  for (const [rawHostPattern, pathPatterns] of Object.entries(value)) {
+    const hostPattern = normalizeHostPattern(rawHostPattern);
+
+    if (!hostSet.has(hostPattern)) {
+      throw new Error(`allowedPaths key must also appear in allowedHosts: ${hostPattern}`);
+    }
+
+    if (!Array.isArray(pathPatterns)) {
+      throw new Error(`allowedPaths[${JSON.stringify(hostPattern)}] must be an array.`);
+    }
+
+    entries.push([
+      hostPattern,
+      [...new Set(pathPatterns.map(normalizePathPattern))]
+    ]);
+  }
+
+  return Object.fromEntries(entries);
+}
+
+function isPathAllowed(pathname, pathPatterns) {
+  if (!Array.isArray(pathPatterns) || pathPatterns.length === 0) {
+    return true;
+  }
+
+  return pathPatterns.some(pattern => {
+    if (!pattern.endsWith('/**')) {
+      return pathname === pattern;
+    }
+
+    const base = pattern.slice(0, -3);
+    return !base || pathname === base || pathname.startsWith(`${base}/`);
   });
 }
 
@@ -200,8 +301,14 @@ function assertAllowedUrl(rawUrl) {
     throw new Error('Only http:// and https:// URLs are supported by Savage MCP.');
   }
 
-  if (!isHostnameAllowed(url.hostname)) {
+  const hostPattern = matchingHostPattern(url.hostname);
+
+  if (!hostPattern) {
     throw new Error(`Host is not allowed by Savage MCP: ${url.hostname}`);
+  }
+
+  if (!isPathAllowed(url.pathname, allowedPaths[hostPattern])) {
+    throw new Error(`Path is not allowed by Savage MCP for ${hostPattern}: ${url.pathname}`);
   }
 
   return url;
@@ -866,6 +973,7 @@ async function handleStatus() {
     bridgeAuthenticated: socketAuthenticated,
     bridgePort: settings.bridgePort,
     allowedHosts,
+    allowedPaths,
     closeAfterScrape,
     agentTab: agentTab?.id
       ? {
@@ -1045,7 +1153,11 @@ async function handleSocketMessage(event, settings) {
       return;
     }
 
-    allowedHosts = normalizeHostPatterns(message.allowedHosts || []);
+    const nextAllowedHosts = normalizeHostPatterns(message.allowedHosts || []);
+    const nextAllowedPaths = normalizeAllowedPaths(message.allowedPaths || {}, nextAllowedHosts);
+
+    allowedHosts = nextAllowedHosts;
+    allowedPaths = nextAllowedPaths;
     agentTabCloseSeconds = normalizedCloseSeconds(message.agentTabCloseSeconds);
     closeAfterScrape = message.closeAfterScrape === true;
 
@@ -1111,6 +1223,7 @@ async function refreshBridgeConnection() {
 
   if (!shouldConnect) {
     allowedHosts = [];
+    allowedPaths = {};
     closeBridgeSocket();
     await closeAgentTab();
     return;

@@ -1,6 +1,6 @@
 # Savage Scraper Privacy Policy
 
-Effective date: September 9, 2026
+Effective date: September 11, 2026
 
 Savage Scraper is a Chrome extension that converts rendered web-page content into a simplified HTML representation for two closely related user-facing workflows:
 
@@ -40,11 +40,11 @@ MCP mode is disabled by default.
 To enable it, the user must:
 
 - install and run the separate `savage_mcp` program on the same computer;
-- configure `savage_mcp` with an explicit `allowed_hosts` whitelist;
+- configure `savage_mcp` with an explicit `allowed_hosts` whitelist and, optionally, per-host `allowed_paths` restrictions;
 - configure the matching local bridge token/port in Savage Scraper's options page; and
 - explicitly approve Chrome's optional HTTP/HTTPS host-access permission.
 
-When MCP mode is enabled, Savage Scraper can open and scrape only HTTP/HTTPS URLs permitted by the `allowed_hosts` configuration received from the authenticated local `savage_mcp` process. Savage Scraper validates the whitelist again on the extension side before opening or scraping a page.
+When MCP mode is enabled, Savage Scraper can open and scrape only HTTP/HTTPS URLs permitted by the host/path policy received from the authenticated local `savage_mcp` process. `allowed_hosts` is always the outer gate. Optional `allowed_paths` entries can narrow an already-allowed host to exact paths or recursive prefixes. If an allowed host has no matching path entry, or the matching entry is an empty array, all paths on that host remain allowed. Savage Scraper validates the same policy again on the extension side before opening or scraping a page, including after redirects or other main-tab URL changes.
 
 Before an MCP capture, Savage Scraper waits briefly after Chrome reports the normal page load complete and during its main-page lazy-load scroll pass. It uses bounded quiet windows based on relevant DOM mutations, document-height changes and `fetch`/XHR resource completions so dynamically rendered content has an opportunity to appear. Savage Scraper then restores the initial main-page scroll position before running the normal scraper. Nested scroll containers are not traversed.
 
@@ -99,13 +99,13 @@ Savage Scraper uses the following required Chrome extension permissions:
 
 Savage Scraper also declares optional HTTP/HTTPS host permissions. These permissions are **not requested at installation**. Chrome asks for them only after the user opens Savage Scraper's options and explicitly chooses **Enable MCP website access**. They are necessary for autonomous MCP-triggered scraping because there is no per-page toolbar click that would create a temporary `activeTab` grant.
 
-The extension's MCP logic separately restricts actual navigation and scraping to the user's `allowed_hosts` whitelist supplied by the authenticated local `savage_mcp` process.
+The extension's MCP logic separately restricts actual navigation and scraping to the user's `allowed_hosts` whitelist and any configured `allowed_paths` restrictions supplied by the authenticated local `savage_mcp` process. These policy values are held in memory for enforcement and are not persisted by Savage Scraper.
 
 ## Local bridge security
 
 The optional MCP bridge connects only to `ws://127.0.0.1:<configured-port>`.
 
-The bridge uses challenge-response HMAC authentication based on a shared local token. The token remains in local configuration/storage and is not transmitted directly. Savage Scraper accepts MCP commands only after successful authentication and only supports the fixed actions implemented by the packaged extension code. It does not execute arbitrary JavaScript or remotely supplied executable code.
+The bridge uses challenge-response HMAC authentication based on a shared local token. The token remains in local configuration/storage and is not transmitted directly. Savage Scraper accepts MCP commands and host/path policy updates only after successful authentication and only supports the fixed actions implemented by the packaged extension code. It does not execute arbitrary JavaScript or remotely supplied executable code.
 
 ## Chrome Web Store Limited Use
 

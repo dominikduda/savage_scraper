@@ -86,7 +86,8 @@
       <p class="warning">
         Enabling MCP website access gives Savage Scraper optional permission to access normal HTTP/HTTPS pages.
         Actual MCP navigation and scraping are additionally restricted by the configurable
-        <code>allowed_hosts</code> whitelist in savage_mcp.
+        <code>allowed_hosts</code> whitelist and optional <code>allowed_paths</code> restrictions in savage_mcp.
+        Missing or empty path entries allow all paths on an already-allowed host.
       </p>
     </section>
   </main>

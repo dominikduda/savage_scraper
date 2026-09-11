@@ -38,8 +38,8 @@
         inputmode="numeric"
       />
       <p class="hint">
-        Consecutive stable-bottom checks required before MCP scrolling finishes.
-        Default: 2.
+        How many times Savage Scraper confirms the page bottom before finishing.
+        Try increasing this if scraping finishes too early. Default: 2.
       </p>
 
       <label for="bottomConfirmationMaxMs">Bottom confirmation maximum wait (ms)</label>
@@ -52,8 +52,8 @@
         inputmode="numeric"
       />
       <p class="hint">
-        Maximum dynamic settle time for each bottom confirmation check.
-        Default: 2600 ms.
+        How long each bottom check may wait for more page content.
+        Try increasing this if scraping finishes before content has loaded. Default: 2600 ms.
       </p>
 
       <div class="buttons">

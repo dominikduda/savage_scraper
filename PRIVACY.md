@@ -1,6 +1,6 @@
 # Savage Scraper Privacy Policy
 
-Effective date: September 11, 2026
+Effective date: September 16, 2026
 
 Savage Scraper is a Chrome extension that converts rendered web-page content into a simplified HTML representation for two closely related user-facing workflows:
 
@@ -49,6 +49,8 @@ When MCP mode is enabled, Savage Scraper can open and scrape only HTTP/HTTPS URL
 Before an MCP capture, Savage Scraper waits briefly after Chrome reports the normal page load complete and during its main-page lazy-load scroll pass. It uses bounded quiet windows based on relevant DOM mutations, document-height changes and `fetch`/XHR resource completions so dynamically rendered content has an opportunity to appear. Savage Scraper then restores the initial main-page scroll position before running the normal scraper. Nested scroll containers are not traversed.
 
 Savage Scraper maintains at most one dedicated MCP agent tab. By default it closes that tab after the inactivity timeout supplied by `savage_mcp`. If the user enables `close_after_scrape` in the local `savage_mcp` configuration, Savage Scraper instead closes the dedicated tab immediately after a successful MCP scrape result has been captured; the inactivity timeout remains a safety fallback for failed operations.
+
+During an MCP browser operation, Savage Scraper temporarily brings the dedicated agent tab and its containing Chrome window to the foreground and keeps the tab active, the window focused and the window non-minimized while navigation, page settling, scrolling and extraction run. If the user or another process changes those conditions during the operation, Savage Scraper reasserts the required foreground state. This enforcement stops when the operation succeeds or fails, after which Savage Scraper restores the previous Chrome tab/window state on a best-effort basis. A Chrome extension cannot reliably reactivate an arbitrary previously focused non-Chrome application. This foreground behavior applies only to optional MCP operations and does not change manual mode.
 
 ## How data is used
 

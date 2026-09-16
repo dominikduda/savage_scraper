@@ -21,7 +21,7 @@ MCP mode works through Savage Scraper installed in your normal Chrome profile. T
 
 You do not need to maintain a separate headless browser, automation profile, duplicated login environment or dedicated browser machine just to give an AI read access to pages you can already access.
 
-Your browser also remains a normal browser for you. Savage MCP uses one dedicated agent tab for its work and restores the previously selected tab when possible; it does not take over your other tabs.
+Savage MCP uses one dedicated agent tab for its work. During each MCP browser operation, Savage Scraper temporarily brings that tab and its Chrome window to the foreground and may override tab/window focus changes until the operation finishes; afterward it restores the previous Chrome state on a best-effort basis. Outside that processing window, your browser behaves normally.
 
 ### Intentionally limited browser authority
 

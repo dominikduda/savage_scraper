@@ -56,6 +56,15 @@
         Try increasing this if scraping finishes before content has loaded. Default: 2600 ms.
       </p>
 
+      <p class="warning">
+        During MCP browser operations, Savage Scraper temporarily brings its dedicated agent tab and
+        Chrome window to the foreground and keeps them active, focused, and non-minimized while
+        navigation and scraping run. If you switch tabs, focus another Chrome window, or minimize
+        Chrome during an active MCP operation, Savage Scraper may temporarily restore the agent
+        tab/window until the operation finishes. Previous Chrome state is restored on a best-effort
+        basis afterward.
+      </p>
+
       <div class="buttons">
         <button id="saveButton" type="button">Save MCP settings</button>
         <button id="enableButton" type="button">Enable MCP website access</button>

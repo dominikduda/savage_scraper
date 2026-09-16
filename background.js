@@ -35,6 +35,7 @@ const SCROLL_MAX_STEPS = 40;
 const SCROLL_MAX_MS = 18000;
 const MAX_DOCUMENT_RETRIES = 3;
 const AGENT_OPERATION_MAX_MS = 60000;
+const AGENT_FOREGROUND_WATCHDOG_MS = 500;
 
 let socket = null;
 let socketAuthenticated = false;
@@ -47,6 +48,7 @@ let agentTabCloseSeconds = DEFAULT_AGENT_TAB_CLOSE_SECONDS;
 let closeAfterScrape = false;
 let agentOperationQueue = Promise.resolve();
 let agentOperationActive = false;
+let activeForegroundSession = null;
 
 class UnavailablePageError extends Error {
   constructor(message) {
@@ -795,50 +797,315 @@ async function waitForTabComplete(tabId, timeoutMs = 30000) {
   });
 }
 
-async function withAgentTabSelected(tab, operation) {
-  const [previousActiveTab] = await chrome.tabs.query({
+async function beginForegroundAgentSession(tab) {
+  if (!Number.isInteger(tab?.id) || !Number.isInteger(tab?.windowId)) {
+    throw new Error('Savage MCP agent tab is unavailable.');
+  }
+
+  if (activeForegroundSession) {
+    throw new Error('A Savage MCP foreground session is already active.');
+  }
+
+  const agentWindow = await chrome.windows.get(tab.windowId);
+  const [previousAgentWindowActiveTab] = await chrome.tabs.query({
     active: true,
     windowId: tab.windowId
   });
+  const chromeWindows = await chrome.windows.getAll();
+  const focusedWindow = chromeWindows.find(window => window.focused) ?? null;
+  const chromeHadFocusedWindow = focusedWindow !== null;
+  const previousFocusedWindowId = focusedWindow?.id ?? null;
+  let previousFocusedWindowActiveTabId = null;
 
-  if (previousActiveTab?.id !== tab.id) {
-    await chrome.tabs.update(tab.id, { active: true });
+  if (Number.isInteger(previousFocusedWindowId)) {
+    const [previousFocusedWindowActiveTab] = await chrome.tabs.query({
+      active: true,
+      windowId: previousFocusedWindowId
+    });
+    previousFocusedWindowActiveTabId = previousFocusedWindowActiveTab?.id ?? null;
   }
 
-  try {
-    return await operation();
-  } finally {
-    if (previousActiveTab?.id && previousActiveTab.id !== tab.id) {
+  const session = {
+    active: true,
+    agentTabId: tab.id,
+    agentWindowId: tab.windowId,
+    originalAgentWindowState: agentWindow.state,
+    foregroundAgentWindowState:
+      agentWindow.state === 'minimized' ? 'normal' : agentWindow.state,
+    previousAgentWindowActiveTabId: previousAgentWindowActiveTab?.id ?? null,
+    previousFocusedWindowId,
+    previousFocusedWindowActiveTabId,
+    chromeHadFocusedWindow,
+    enforcementPromise: Promise.resolve(),
+    fatalError: null,
+    watchdogId: null,
+    handleTabActivated: null,
+    handleWindowFocusChanged: null,
+    queueEnforcement: null,
+    enforce: null,
+    restore: null
+  };
+
+  const rememberEnforcementError = error => {
+    const normalizedError = error instanceof Error
+      ? error
+      : new Error(String(error));
+
+    if (!session.fatalError) {
+      session.fatalError = normalizedError;
+    }
+
+    console.error(
+      '[Savage Scraper MCP] Foreground enforcement failed:',
+      normalizedError
+    );
+  };
+
+  const enforceNow = async () => {
+    if (!session.active) {
+      return;
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      let currentTab;
+      let currentWindow;
+
       try {
-        await chrome.tabs.update(previousActiveTab.id, { active: true });
-      } catch {
-        // The user's previous tab may have been closed while the scrape ran.
+        [currentTab, currentWindow] = await Promise.all([
+          chrome.tabs.get(session.agentTabId),
+          chrome.windows.get(session.agentWindowId)
+        ]);
+      } catch (error) {
+        throw new Error(
+          `Savage MCP lost its foreground agent tab or window: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+
+      if (currentTab.windowId !== session.agentWindowId) {
+        throw new Error('Savage MCP agent tab moved to a different Chrome window.');
+      }
+
+      if (currentWindow.state === 'minimized') {
+        await chrome.windows.update(session.agentWindowId, {
+          state: session.foregroundAgentWindowState
+        });
+      }
+
+      if (!currentTab.active) {
+        await chrome.tabs.update(session.agentTabId, { active: true });
+      }
+
+      currentWindow = await chrome.windows.get(session.agentWindowId);
+
+      if (!currentWindow.focused) {
+        await chrome.windows.update(session.agentWindowId, { focused: true });
+      }
+
+      const [verifiedTab, verifiedWindow] = await Promise.all([
+        chrome.tabs.get(session.agentTabId),
+        chrome.windows.get(session.agentWindowId)
+      ]);
+
+      if (
+        verifiedTab.windowId === session.agentWindowId &&
+        verifiedTab.active &&
+        verifiedWindow.state !== 'minimized' &&
+        verifiedWindow.focused
+      ) {
+        return;
+      }
+
+      if (attempt < 2) {
+        await sleep(50);
       }
     }
+
+    throw new Error('Savage MCP could not establish foreground rendering state.');
+  };
+
+  session.queueEnforcement = () => {
+    if (!session.active) {
+      return session.enforcementPromise;
+    }
+
+    session.enforcementPromise = session.enforcementPromise
+      .then(async () => {
+        if (session.active) {
+          await enforceNow();
+        }
+      })
+      .catch(rememberEnforcementError);
+
+    return session.enforcementPromise;
+  };
+
+  session.enforce = async () => {
+    if (!session.active) {
+      throw new Error('Savage MCP foreground session is no longer active.');
+    }
+
+    await session.queueEnforcement();
+
+    if (session.fatalError) {
+      throw new Error(
+        `Savage MCP could not maintain Chrome foreground state: ${session.fatalError.message}`
+      );
+    }
+  };
+
+  session.handleTabActivated = activeInfo => {
+    if (
+      session.active &&
+      activeInfo.windowId === session.agentWindowId &&
+      activeInfo.tabId !== session.agentTabId
+    ) {
+      void session.queueEnforcement();
+    }
+  };
+
+  session.handleWindowFocusChanged = windowId => {
+    if (session.active && windowId !== session.agentWindowId) {
+      void session.queueEnforcement();
+    }
+  };
+
+  session.restore = async () => {
+    if (!session.active && activeForegroundSession !== session) {
+      return;
+    }
+
+    session.active = false;
+    chrome.tabs.onActivated.removeListener(session.handleTabActivated);
+    chrome.windows.onFocusChanged.removeListener(session.handleWindowFocusChanged);
+
+    if (session.watchdogId !== null) {
+      clearInterval(session.watchdogId);
+      session.watchdogId = null;
+    }
+
+    try {
+      await session.enforcementPromise;
+    } catch {
+      // queueEnforcement records failures; cleanup must still continue.
+    }
+
+    const bestEffort = async (label, operation) => {
+      try {
+        await operation();
+      } catch (error) {
+        console.error(
+          `[Savage Scraper MCP] Failed to restore ${label}:`,
+          error
+        );
+      }
+    };
+
+    if (
+      Number.isInteger(session.previousAgentWindowActiveTabId) &&
+      session.previousAgentWindowActiveTabId !== session.agentTabId
+    ) {
+      await bestEffort('the previous agent-window tab', async () => {
+        await chrome.tabs.update(session.previousAgentWindowActiveTabId, {
+          active: true
+        });
+      });
+    }
+
+    if (Number.isInteger(session.previousFocusedWindowActiveTabId)) {
+      await bestEffort('the previous focused-window tab', async () => {
+        await chrome.tabs.update(session.previousFocusedWindowActiveTabId, {
+          active: true
+        });
+      });
+    }
+
+    if (session.originalAgentWindowState !== 'minimized') {
+      await bestEffort('the agent window state', async () => {
+        const currentWindow = await chrome.windows.get(session.agentWindowId);
+
+        if (currentWindow.state !== session.originalAgentWindowState) {
+          await chrome.windows.update(session.agentWindowId, {
+            state: session.originalAgentWindowState
+          });
+        }
+      });
+    }
+
+    if (
+      session.chromeHadFocusedWindow &&
+      Number.isInteger(session.previousFocusedWindowId)
+    ) {
+      await bestEffort('the previous focused Chrome window', async () => {
+        await chrome.windows.update(session.previousFocusedWindowId, {
+          focused: true
+        });
+      });
+    }
+
+    if (session.originalAgentWindowState === 'minimized') {
+      await bestEffort('the agent window minimized state', async () => {
+        await chrome.windows.update(session.agentWindowId, {
+          state: 'minimized'
+        });
+      });
+    }
+
+    if (activeForegroundSession === session) {
+      activeForegroundSession = null;
+    }
+  };
+
+  activeForegroundSession = session;
+  chrome.tabs.onActivated.addListener(session.handleTabActivated);
+  chrome.windows.onFocusChanged.addListener(session.handleWindowFocusChanged);
+  session.watchdogId = setInterval(() => {
+    if (session.active) {
+      void session.queueEnforcement();
+    }
+  }, AGENT_FOREGROUND_WATCHDOG_MS);
+
+  try {
+    await session.enforce();
+    return session;
+  } catch (error) {
+    await session.restore();
+    throw error;
   }
 }
 
-async function ensureAgentTab(url, deadlineAt) {
+async function getOrCreateAgentTab() {
   let tab = await getAgentTab();
 
   if (tab?.id) {
-    tab = await chrome.tabs.update(tab.id, { url });
-  } else {
-    tab = await chrome.tabs.create({
-      url,
-      active: false
-    });
-    await setStoredAgentTabId(tab.id);
+    return tab;
   }
 
+  tab = await chrome.tabs.create({
+    url: 'about:blank',
+    active: false
+  });
+  await setStoredAgentTabId(tab.id);
+  return tab;
+}
+
+async function navigateAgentTab(tab, url, deadlineAt, foregroundSession) {
+  await foregroundSession.enforce();
+
+  tab = await chrome.tabs.update(tab.id, { url });
+
+  await foregroundSession.enforce();
   await waitForTabComplete(
     tab.id,
     Math.min(30000, remainingOperationMs(deadlineAt))
   );
+  await foregroundSession.enforce();
+
   return await chrome.tabs.get(tab.id);
 }
 
-async function performAgentScrape(tab, deadlineAt) {
+async function performAgentScrape(tab, deadlineAt, foregroundSession) {
   if (!(await hasMcpHostPermission())) {
     throw new Error('MCP website access is not enabled in Savage Scraper options.');
   }
@@ -848,56 +1115,62 @@ async function performAgentScrape(tab, deadlineAt) {
 
   for (let retry = 0; retry <= MAX_DOCUMENT_RETRIES; retry += 1) {
     remainingOperationMs(deadlineAt);
+    await foregroundSession.enforce();
 
     let currentTab = await chrome.tabs.get(tab.id);
     await assertAgentTabAllowed(currentTab.url);
 
     try {
+      await foregroundSession.enforce();
       await waitForTabComplete(
         currentTab.id,
         Math.min(30000, remainingOperationMs(deadlineAt))
       );
+      await foregroundSession.enforce();
 
       currentTab = await chrome.tabs.get(currentTab.id);
       await assertAgentTabAllowed(currentTab.url);
 
+      await foregroundSession.enforce();
       const identity = await getMainDocumentIdentity(currentTab.id);
       await assertAgentTabAllowed(identity.url);
 
-      return await withAgentTabSelected(currentTab, async () => {
-        await lazyLoadMainPage(
-          currentTab.id,
-          identity.documentId,
-          remainingOperationMs(deadlineAt),
-          scrollSettings
+      await foregroundSession.enforce();
+      await lazyLoadMainPage(
+        currentTab.id,
+        identity.documentId,
+        remainingOperationMs(deadlineAt),
+        scrollSettings
+      );
+
+      remainingOperationMs(deadlineAt);
+      await foregroundSession.enforce();
+
+      const afterScrollIdentity = await getMainDocumentIdentity(currentTab.id);
+
+      if (afterScrollIdentity.documentId !== identity.documentId) {
+        throw new TransientDocumentError(
+          'The main document changed during Savage Scraper processing.'
         );
+      }
 
-        remainingOperationMs(deadlineAt);
+      await assertAgentTabAllowed(afterScrollIdentity.url);
+      await foregroundSession.enforce();
 
-        const afterScrollIdentity = await getMainDocumentIdentity(currentTab.id);
-
-        if (afterScrollIdentity.documentId !== identity.documentId) {
-          throw new TransientDocumentError(
-            'The main document changed during Savage Scraper processing.'
-          );
-        }
-
-        await assertAgentTabAllowed(afterScrollIdentity.url);
-
-        return await executeScraper(
-          {
-            ...currentTab,
-            url: afterScrollIdentity.url
-          },
-          settings,
-          identity.documentId
-        );
-      });
+      return await executeScraper(
+        {
+          ...currentTab,
+          url: afterScrollIdentity.url
+        },
+        settings,
+        identity.documentId
+      );
     } catch (error) {
       if (!isTransientDocumentError(error) || retry >= MAX_DOCUMENT_RETRIES) {
         throw error;
       }
 
+      await foregroundSession.enforce();
       await waitForTabComplete(
         tab.id,
         Math.min(30000, remainingOperationMs(deadlineAt))
@@ -916,10 +1189,23 @@ async function handleOpen(url) {
   const parsedUrl = assertAllowedUrl(url);
   const deadlineAt = Date.now() + AGENT_OPERATION_MAX_MS;
   let scrapeSucceeded = false;
+  let foregroundSession = null;
 
   try {
-    const tab = await ensureAgentTab(parsedUrl.href, deadlineAt);
-    const output = await performAgentScrape(tab, deadlineAt);
+    let tab = await getOrCreateAgentTab();
+    foregroundSession = await beginForegroundAgentSession(tab);
+    tab = await navigateAgentTab(
+      tab,
+      parsedUrl.href,
+      deadlineAt,
+      foregroundSession
+    );
+
+    const output = await performAgentScrape(
+      tab,
+      deadlineAt,
+      foregroundSession
+    );
     const finalTab = await chrome.tabs.get(tab.id);
 
     const result = {
@@ -931,6 +1217,9 @@ async function handleOpen(url) {
     scrapeSucceeded = true;
     return result;
   } finally {
+    if (foregroundSession) {
+      await foregroundSession.restore();
+    }
     await finishAgentTabAfterScrape(scrapeSucceeded);
   }
 }
@@ -944,9 +1233,15 @@ async function handleScrape() {
 
   const deadlineAt = Date.now() + AGENT_OPERATION_MAX_MS;
   let scrapeSucceeded = false;
+  let foregroundSession = null;
 
   try {
-    const output = await performAgentScrape(tab, deadlineAt);
+    foregroundSession = await beginForegroundAgentSession(tab);
+    const output = await performAgentScrape(
+      tab,
+      deadlineAt,
+      foregroundSession
+    );
     const finalTab = await chrome.tabs.get(tab.id);
 
     const result = {
@@ -958,6 +1253,9 @@ async function handleScrape() {
     scrapeSucceeded = true;
     return result;
   } finally {
+    if (foregroundSession) {
+      await foregroundSession.restore();
+    }
     await finishAgentTabAfterScrape(scrapeSucceeded);
   }
 }

@@ -8,8 +8,8 @@ Savage Scraper is built for a simple job: **give a human or an AI useful page co
 
 It has two modes built around the same scraper:
 
-* **Manual mode** — click the toolbar icon to scrape the active page and copy the result to the clipboard.
-* **Optional MCP mode** — connect to the local [Savage MCP](https://github.com/dominikduda/savage_mcp) server so an MCP client can read explicitly allowlisted sites through the Chrome profile you already use.
+* **Manual mode** - click the toolbar icon to scrape the active page and copy the result to the clipboard.
+* **Optional MCP mode** - connect to the local [Savage MCP](https://github.com/dominikduda/savage_mcp) server so an MCP client can read explicitly allowlisted sites through the Chrome profile you already use.
 
 Manual behavior remains the default and does not require MCP access.
 
@@ -35,7 +35,7 @@ It does **not** give the MCP client primitives for:
 * executing arbitrary page JavaScript; or
 * unrestricted browser control.
 
-That limitation is intentional. If your goal is to let an AI **read selected authenticated websites**—for example documentation, Jira, GitHub, internal dashboards or admin interfaces—without also giving it a broad set of mutation commands, the smaller API is the feature.
+That limitation is intentional. If your goal is to let an AI **read selected authenticated websites**-for example documentation, Jira, GitHub, internal dashboards or admin interfaces-without also giving it a broad set of mutation commands, the smaller API is the feature.
 
 This does not make websites risk-free: loading a page can itself have application-specific effects. But it materially reduces the browser actions exposed to the MCP client compared with a full automation tool.
 
@@ -134,7 +134,7 @@ MCP host (OpenCode, etc.)
  normal Chrome
 ```
 
-Savage Scraper maintains one authenticated WebSocket connection to the active Savage MCP bridge leader. Savage MCP can internally coordinate multiple host-side processes—for example, several OpenCode sessions or concurrent local jobs—behind that single browser connection. No additional Savage Scraper configuration is required for those clients; from the extension's perspective there is still one bridge and one dedicated agent tab.
+Savage Scraper maintains one authenticated WebSocket connection to the active Savage MCP bridge leader. Savage MCP can internally coordinate multiple host-side processes-for example, several OpenCode sessions or concurrent local jobs-behind that single browser connection. No additional Savage Scraper configuration is required for those clients; from the extension's perspective there is still one bridge and one dedicated agent tab.
 
 Requests from multiple Savage MCP clients are serialized on the MCP side before they reach the extension. If the active bridge leader exits and another Savage MCP process takes over, Savage Scraper's normal reconnect behavior connects the extension to the replacement leader.
 

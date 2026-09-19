@@ -134,6 +134,10 @@ MCP host (OpenCode, etc.)
  normal Chrome
 ```
 
+Savage Scraper maintains one authenticated WebSocket connection to the active Savage MCP bridge leader. Savage MCP can internally coordinate multiple host-side processes—for example, several OpenCode sessions or concurrent local jobs—behind that single browser connection. No additional Savage Scraper configuration is required for those clients; from the extension's perspective there is still one bridge and one dedicated agent tab.
+
+Requests from multiple Savage MCP clients are serialized on the MCP side before they reach the extension. If the active bridge leader exits and another Savage MCP process takes over, Savage Scraper's normal reconnect behavior connects the extension to the replacement leader.
+
 ### Enable MCP mode
 
 1. Install and initialize [Savage MCP](https://github.com/dominikduda/savage_mcp).

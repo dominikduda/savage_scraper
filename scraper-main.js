@@ -47,7 +47,9 @@
       }` +
       `Classes are heuristically filtered; at most ` +
       `${MAX_CLASSES_PER_ELEMENT} classes are retained per element ` +
-      `and additional classes may be omitted. ` +
+      `and additional classes may be omitted. Open shadow roots and ` +
+      `readable same-origin iframe documents are traversed; inaccessible ` +
+      `iframe contents remain omitted. ` +
       `Canvas-rendered xterm terminals are extracted separately when accessible. -->`
   ].join('\n');
 
@@ -76,8 +78,7 @@
     'TEMPLATE',
     'SVG',
     'PATH',
-    'CANVAS',
-    'IFRAME'
+    'CANVAS'
   ]);
 
 
@@ -149,6 +150,7 @@
 
     'DETAILS',
     'SUMMARY',
+    'DIALOG',
 
     'FIGURE',
     'FIGCAPTION',
@@ -190,6 +192,8 @@
     'DL',
     'DT',
     'DD',
+    'DIALOG',
+    'IFRAME-CONTENT',
     'FIELDSET',
     'FIGCAPTION',
     'FIGURE',
@@ -235,15 +239,27 @@
     'listitem',
 
     'table',
+    'grid',
+    'rowgroup',
     'row',
     'cell',
+    'gridcell',
     'columnheader',
     'rowheader',
 
     'group',
     'status',
     'alert',
-    'dialog'
+    'dialog',
+    'alertdialog'
+  ]);
+
+
+  const STRUCTURAL_CELL_ROLES = new Set([
+    'cell',
+    'gridcell',
+    'columnheader',
+    'rowheader'
   ]);
 
 
@@ -295,6 +311,147 @@
   }
 
 
+  function isElementNode(node) {
+    return (
+      node?.nodeType ===
+      Node.ELEMENT_NODE
+    );
+  }
+
+
+  function getNodeWindow(node) {
+    return (
+      node?.ownerDocument?.defaultView ||
+      window
+    );
+  }
+
+
+  function getComputedStyleFor(el) {
+    try {
+      return (
+        getNodeWindow(el)?.getComputedStyle(el) ||
+        null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+
+  function composedParentElement(node) {
+    if (isElementNode(node?.assignedSlot)) {
+      return node.assignedSlot;
+    }
+
+
+    if (node?.parentElement) {
+      return node.parentElement;
+    }
+
+
+    let root;
+
+    try {
+      root = node?.getRootNode?.();
+    } catch {
+      return null;
+    }
+
+
+    const host = root?.host;
+
+    return isElementNode(host)
+      ? host
+      : null;
+  }
+
+
+  function composedContains(
+    ancestor,
+    node
+  ) {
+    for (
+      let current = node;
+      current;
+      current = composedParentElement(
+        current
+      )
+    ) {
+      if (current === ancestor) {
+        return true;
+      }
+    }
+
+
+    return false;
+  }
+
+
+  function renderedChildNodes(el) {
+    if (
+      el.tagName === 'SLOT' &&
+      typeof el.assignedNodes === 'function'
+    ) {
+      try {
+        const assigned = [
+          ...el.assignedNodes({
+            flatten: true
+          })
+        ];
+
+        if (assigned.length) {
+          return assigned;
+        }
+      } catch {
+        // Fall back to the slot's fallback children.
+      }
+    }
+
+
+    try {
+      if (
+        el.shadowRoot?.mode === 'open'
+      ) {
+        return [
+          ...el.shadowRoot.childNodes
+        ];
+      }
+    } catch {
+      // Fall back to light DOM.
+    }
+
+
+    return [
+      ...el.childNodes
+    ];
+  }
+
+
+  function accessibleFrameDocument(el) {
+    if (el.tagName !== 'IFRAME') {
+      return null;
+    }
+
+    try {
+      const frameDocument =
+        el.contentDocument;
+
+      if (!frameDocument?.documentElement) {
+        return null;
+      }
+
+      // Accessing location also verifies that the document is not
+      // cross-origin or a sandboxed opaque-origin document.
+      void frameDocument.location.href;
+
+      return frameDocument;
+    } catch {
+      return null;
+    }
+  }
+
+
   // ============================================================
   // VISIBILITY
   // ============================================================
@@ -308,14 +465,15 @@
     // the entire subtree.
     for (
       let current = el;
-      current instanceof Element;
-      current = current.parentElement
+      isElementNode(current);
+      current = composedParentElement(
+        current
+      )
     ) {
-      let style;
+      const style =
+        getComputedStyleFor(current);
 
-      try {
-        style = getComputedStyle(current);
-      } catch {
+      if (!style) {
         continue;
       }
 
@@ -330,18 +488,38 @@
 
 
     // Closed <details> hides everything except its <summary>.
-    const closedDetails =
-      el.closest?.('details:not([open])');
+    let closedDetails = null;
+
+    for (
+      let current = el;
+      isElementNode(current);
+      current = composedParentElement(
+        current
+      )
+    ) {
+      if (
+        current.tagName === 'DETAILS' &&
+        !current.hasAttribute('open')
+      ) {
+        closedDetails = current;
+        break;
+      }
+    }
 
     if (closedDetails) {
       const summary =
         closedDetails.querySelector(':scope > summary');
 
       const inSummary =
-        summary &&
         (
-          el === summary ||
-          summary.contains(el)
+          el === closedDetails ||
+          (
+            summary &&
+            composedContains(
+              summary,
+              el
+            )
+          )
         );
 
       if (!inSummary) {
@@ -359,7 +537,8 @@
       return true;
     }
 
-    const parent = textNode.parentElement;
+    const parent =
+      composedParentElement(textNode);
 
     if (!parent) {
       return false;
@@ -370,14 +549,8 @@
     }
 
 
-    let style;
-
-    try {
-      style = getComputedStyle(parent);
-    } catch {
-      style = null;
-    }
-
+    const style =
+      getComputedStyleFor(parent);
 
     if (
       style &&
@@ -393,7 +566,9 @@
     // A Range gives us a useful approximation of whether this
     // text actually participates in rendered layout.
     try {
-      const range = document.createRange();
+      const range =
+        textNode.ownerDocument?.createRange?.() ||
+        document.createRange();
 
       range.selectNodeContents(textNode);
 
@@ -430,17 +605,17 @@
       return false;
     }
 
-    try {
-      const style =
-        getComputedStyle(root);
+    const style =
+      getComputedStyleFor(root);
 
+    if (style) {
       return !(
         style.visibility === 'hidden' ||
         style.visibility === 'collapse'
       );
-    } catch {
-      return true;
     }
+
+    return true;
   }
 
 
@@ -677,6 +852,9 @@
     const role =
       source.getAttribute('role');
 
+    const normalizedRole =
+      (role || '').toLowerCase();
+
     if (
       role &&
       role !== 'presentation' &&
@@ -728,7 +906,7 @@
         'FORM'
       ].includes(source.tagName) ||
       USEFUL_GENERIC_ROLES.has(
-        role || ''
+        normalizedRole
       );
 
 
@@ -752,6 +930,61 @@
         'aria-label',
         ariaLabel
       );
+    }
+
+
+    const isDialogLike =
+      source.tagName === 'DIALOG' ||
+      normalizedRole === 'dialog' ||
+      normalizedRole === 'alertdialog';
+
+
+    if (
+      isDialogLike &&
+      source.hasAttribute('aria-modal')
+    ) {
+      target.setAttribute(
+        'aria-modal',
+        source.getAttribute('aria-modal')
+      );
+    }
+
+
+    if (
+      isDialogLike ||
+      isFormControl
+    ) {
+      for (
+        const attr
+        of [
+          'aria-labelledby',
+          'aria-describedby'
+        ]
+      ) {
+        if (source.hasAttribute(attr)) {
+          target.setAttribute(
+            attr,
+            source.getAttribute(attr)
+          );
+        }
+      }
+    }
+
+
+    if (source.tagName === 'IFRAME') {
+      for (
+        const attr
+        of ['src', 'title', 'name']
+      ) {
+        if (
+          source.getAttribute(attr)?.trim()
+        ) {
+          target.setAttribute(
+            attr,
+            source.getAttribute(attr)
+          );
+        }
+      }
     }
 
 
@@ -779,7 +1012,18 @@
     // ----------------------------------------------------------
 
     if (
-      source instanceof HTMLInputElement
+      isFormControl &&
+      source.name?.trim()
+    ) {
+      target.setAttribute(
+        'name',
+        source.name
+      );
+    }
+
+
+    if (
+      source.tagName === 'INPUT'
     ) {
       if (source.type) {
         target.setAttribute(
@@ -787,17 +1031,6 @@
           source.type
         );
       }
-
-
-      if (
-        source.name?.trim()
-      ) {
-        target.setAttribute(
-          'name',
-          source.name
-        );
-      }
-
 
       if (
         source.placeholder?.trim()
@@ -832,7 +1065,7 @@
 
 
     if (
-      source instanceof HTMLTextAreaElement &&
+      source.tagName === 'TEXTAREA' &&
       source.placeholder?.trim()
     ) {
       target.setAttribute(
@@ -843,12 +1076,23 @@
 
 
     if (
-      source instanceof HTMLOptionElement &&
+      source.tagName === 'OPTION' &&
       source.selected
     ) {
       target.setAttribute(
         'selected',
         ''
+      );
+    }
+
+
+    if (
+      source.tagName === 'OPTION' &&
+      source.hasAttribute('value')
+    ) {
+      target.setAttribute(
+        'value',
+        source.getAttribute('value')
       );
     }
 
@@ -864,6 +1108,17 @@
       target.setAttribute(
         'datetime',
         source.getAttribute('datetime')
+      );
+    }
+
+
+    if (
+      source.tagName === 'DIALOG' &&
+      source.hasAttribute('open')
+    ) {
+      target.setAttribute(
+        'open',
+        ''
       );
     }
 
@@ -904,6 +1159,26 @@
         );
       }
     }
+
+
+    for (
+      const attr
+      of [
+        'aria-colspan',
+        'aria-rowspan',
+        'aria-colindex',
+        'aria-rowindex',
+        'aria-colcount',
+        'aria-rowcount'
+      ]
+    ) {
+      if (source.hasAttribute(attr)) {
+        target.setAttribute(
+          attr,
+          source.getAttribute(attr)
+        );
+      }
+    }
   }
 
 
@@ -919,10 +1194,13 @@
     const role =
       source.getAttribute('role');
 
+    const normalizedRole =
+      (role || '').toLowerCase();
+
 
     if (
       role &&
-      USEFUL_GENERIC_ROLES.has(role)
+      USEFUL_GENERIC_ROLES.has(normalizedRole)
     ) {
       return true;
     }
@@ -969,6 +1247,87 @@
 
 
     return false;
+  }
+
+
+  function simplifySameOriginFrame(el) {
+    const frameDocument =
+      accessibleFrameDocument(el);
+
+    if (!frameDocument) {
+      return [];
+    }
+
+
+    try {
+      const frameRoot =
+        frameDocument.body ||
+        frameDocument.documentElement;
+
+      if (!frameRoot) {
+        return [];
+      }
+
+
+      const simplifiedChildren = [];
+
+      for (
+        const child
+        of renderedChildNodes(frameRoot)
+      ) {
+        simplifiedChildren.push(
+          ...simplifyNode(child)
+        );
+      }
+
+
+      const visibleText =
+        textFromNodes(
+          simplifiedChildren
+        );
+
+      const hasUsefulContent =
+        simplifiedChildren.some(node =>
+          node.nodeType === Node.ELEMENT_NODE ||
+          hasMeaningfulText(
+            node.textContent || ''
+          )
+        );
+
+
+      if (
+        !hasUsefulContent &&
+        !el.getAttribute('title')?.trim() &&
+        !el.getAttribute('aria-label')?.trim()
+      ) {
+        return [];
+      }
+
+
+      const clone =
+        document.createElement(
+          'iframe-content'
+        );
+
+      for (
+        const child
+        of simplifiedChildren
+      ) {
+        clone.appendChild(child);
+      }
+
+      copyUsefulAttributes(
+        el,
+        clone,
+        visibleText
+      );
+
+      return [clone];
+    } catch {
+      // A frame can navigate between access checks and traversal.
+      // Treat it as inaccessible rather than failing the capture.
+      return [];
+    }
   }
 
 
@@ -1036,7 +1395,7 @@
     // anti-forgery or authentication-related values. Exclude
     // them even when hidden/collapsed content is requested.
     if (
-      el instanceof HTMLInputElement &&
+      el.tagName === 'INPUT' &&
       el.type === 'hidden'
     ) {
       return [];
@@ -1063,6 +1422,29 @@
     }
 
 
+    // Traverse iframe documents only when the page itself can
+    // directly read them. Cross-origin and sandboxed opaque-origin
+    // frames remain intentionally inaccessible.
+    if (el.tagName === 'IFRAME') {
+      if (!INCLUDE_HIDDEN) {
+        const frameStyle =
+          getComputedStyleFor(el);
+
+        if (
+          frameStyle &&
+          (
+            frameStyle.visibility === 'hidden' ||
+            frameStyle.visibility === 'collapse'
+          )
+        ) {
+          return [];
+        }
+      }
+
+      return simplifySameOriginFrame(el);
+    }
+
+
     // ----------------------------------------------------------
     // Children
     // ----------------------------------------------------------
@@ -1072,7 +1454,10 @@
     let directText = '';
 
 
-    for (const child of el.childNodes) {
+    for (
+      const child
+      of renderedChildNodes(el)
+    ) {
       if (
         child.nodeType === Node.TEXT_NODE
       ) {
@@ -1126,7 +1511,7 @@
     // ----------------------------------------------------------
 
     if (
-      el instanceof HTMLTextAreaElement
+      el.tagName === 'TEXTAREA'
     ) {
       const currentValue =
         el.value || '';
@@ -1171,9 +1556,15 @@
     // transparent by default.
     // ----------------------------------------------------------
 
+    const semanticRole =
+      (
+        el.getAttribute('role') || ''
+      ).toLowerCase();
+
     if (
       !GENERIC_TAGS.has(el.tagName) &&
-      !SEMANTIC_TAGS.has(el.tagName)
+      !SEMANTIC_TAGS.has(el.tagName) &&
+      !USEFUL_GENERIC_ROLES.has(semanticRole)
     ) {
       return simplifiedChildren;
     }
@@ -1199,6 +1590,11 @@
 
     let keepWithoutChildren = false;
 
+    const role =
+      (
+        el.getAttribute('role') || ''
+      ).toLowerCase();
+
 
     if (
       el.tagName === 'BR' ||
@@ -1217,15 +1613,71 @@
 
 
     if (
-      el instanceof HTMLInputElement
+      el.tagName === 'TD' ||
+      el.tagName === 'TH' ||
+      el.tagName === 'OPTION' ||
+      STRUCTURAL_CELL_ROLES.has(role)
+    ) {
+      keepWithoutChildren = true;
+    }
+
+
+    if (
+      el.tagName === 'TIME' &&
+      el.hasAttribute('datetime')
+    ) {
+      keepWithoutChildren = true;
+    }
+
+
+    if (
+      el.tagName === 'TEXTAREA' ||
+      el.tagName === 'SELECT'
     ) {
       keepWithoutChildren =
         !!(
-          el.value?.trim() ||
           el.placeholder?.trim() ||
           el.getAttribute('aria-label')?.trim() ||
-          el.name?.trim()
+          el.getAttribute('aria-labelledby')?.trim() ||
+          el.getAttribute('aria-describedby')?.trim() ||
+          el.name?.trim() ||
+          el.id?.trim()
         );
+    }
+
+
+    if (
+      el.tagName === 'DIALOG' &&
+      (
+        el.hasAttribute('open') ||
+        el.getAttribute('aria-label')?.trim() ||
+        el.getAttribute('aria-labelledby')?.trim() ||
+        el.getAttribute('aria-describedby')?.trim()
+      )
+    ) {
+      keepWithoutChildren = true;
+    }
+
+
+    if (
+      (
+        role === 'dialog' ||
+        role === 'alertdialog'
+      ) &&
+      (
+        el.getAttribute('aria-label')?.trim() ||
+        el.getAttribute('aria-labelledby')?.trim() ||
+        el.getAttribute('aria-describedby')?.trim()
+      )
+    ) {
+      keepWithoutChildren = true;
+    }
+
+
+    if (
+      el.tagName === 'INPUT'
+    ) {
+      keepWithoutChildren = true;
     }
 
 

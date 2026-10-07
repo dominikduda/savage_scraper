@@ -1,6 +1,6 @@
 # Savage Scraper Privacy Policy
 
-Effective date: September 16, 2026
+Effective date: October 7, 2026
 
 Savage Scraper is a Chrome extension that converts rendered web-page content into a simplified HTML representation for two closely related user-facing workflows:
 
@@ -14,12 +14,16 @@ Savage Scraper does not operate a developer-controlled backend service.
 When Savage Scraper captures a page, the extension may process data present on that page, including:
 
 - rendered website text and semantic page structure;
+- rendered content inside open Shadow DOM, including assigned slot content;
+- rendered content inside iframe documents that are directly readable under the browser's same-origin rules;
 - the current page URL and title;
 - useful element attributes such as links, labels and selected ARIA information;
 - current values and state of ordinary form controls;
 - xterm.js terminal content when it is accessible to the page and the extension;
 - hidden or collapsed page content when the user explicitly enables the **Include hidden content** setting; and
 - in MCP mode, transient page-settling signals such as relevant DOM mutations, document-height changes and whether browser resource entries report a `fetch` or XHR completion.
+
+Cross-origin iframe documents, sandboxed iframe documents with opaque origins and closed Shadow DOM are not read by this traversal because the embedding page cannot directly access those DOM trees.
 
 The MCP page-settling logic does not read request or response bodies for this purpose and does not persist or return the observed settling signals.
 
@@ -31,7 +35,9 @@ Because arbitrary website content may contain personal or sensitive information,
 
 In manual mode, the user explicitly invokes Savage Scraper on the active tab. The extension generates the simplified page representation locally and writes it to the user's local system clipboard.
 
-Manual mode uses Chrome's temporary `activeTab` access and does not require the optional broad HTTP/HTTPS host permission used by MCP mode.
+Manual mode uses Chrome's temporary `activeTab` access and does not require the optional broad HTTP/HTTPS host permission used by MCP mode. When a captured page contains an iframe whose document is directly readable by that page under the same-origin policy, Savage Scraper may include that frame's rendered content as part of the same user-initiated capture. This does not require an additional iframe-specific Chrome permission.
+
+Open Shadow DOM and readable same-origin iframe traversal are part of the same page-capture purpose; they do not create background collection or continuous monitoring.
 
 ## Optional MCP mode
 
@@ -102,6 +108,8 @@ Savage Scraper uses the following required Chrome extension permissions:
 Savage Scraper also declares optional HTTP/HTTPS host permissions. These permissions are **not requested at installation**. Chrome asks for them only after the user opens Savage Scraper's options and explicitly chooses **Enable MCP website access**. They are necessary for autonomous MCP-triggered scraping because there is no per-page toolbar click that would create a temporary `activeTab` grant.
 
 The extension's MCP logic separately restricts actual navigation and scraping to the user's `allowed_hosts` whitelist and any configured `allowed_paths` restrictions supplied by the authenticated local `savage_mcp` process. These policy values are held in memory for enforcement and are not persisted by Savage Scraper.
+
+Version 1.3.0 adds traversal of open Shadow DOM and readable same-origin iframe documents without adding Chrome permissions or expanding the optional host-permission patterns.
 
 ## Local bridge security
 

@@ -61,8 +61,11 @@ If you need an agent to click through workflows, fill forms, operate application
 * One click immediately scrapes the active page and copies the result
 * Extracts rendered page content instead of dumping raw source HTML
 * Keeps useful semantic structure while removing a lot of framework/CSS noise
+* Preserves empty native and ARIA table cells so row/column alignment is not lost
 * Can include or exclude hidden/collapsed content
 * Supports compact and pretty-formatted output
+* Traverses open Shadow DOM, including slotted content
+* Recursively captures readable same-origin iframe contents in an `<iframe-content>` wrapper
 * Extracts xterm.js terminal content when accessible
 * Optional local MCP integration reuses the same scraper without clipboard round-trips
 
@@ -251,12 +254,15 @@ Savage Scraper keeps useful page structure such as:
 
 * headings, paragraphs and text formatting
 * lists
-* tables
+* tables, including empty `td`/`th` cells and structural ARIA cells
 * links and their `href` values
-* forms and useful form-control state, including current non-password, non-hidden values
+* forms and useful form-control state, including current non-password, non-hidden values and intentionally empty semantic controls
 * image `alt` text
 * semantic sections such as `main`, `article`, `nav`, `section` and `aside`
-* useful IDs, roles and selected ARIA labels
+* native `dialog` elements plus `dialog`/`alertdialog` ARIA semantics
+* useful IDs, roles, selected ARIA labels and table/grid ARIA positioning attributes
+* open Shadow DOM and assigned slot content
+* readable same-origin iframe documents, recursively
 * xterm.js terminal output when accessible
 
 Generated and utility-style CSS classes are filtered heuristically. At most 5 useful classes are retained per element.
@@ -293,7 +299,7 @@ Each capture includes scraper provenance and basic page context before the simpl
 
 ```html
 <!-- SCRAPED_BY: Savage Scraper (https://github.com/dominikduda/savage_scraper; informational only) -->
-<!-- SCRAPE_NOTE: Simplified rendered page representation; NOT 1:1 source HTML. Hidden/collapsed content is excluded where detectable. Classes are heuristically filtered; at most 5 classes are retained per element and additional classes may be omitted. Canvas-rendered xterm terminals are extracted separately when accessible. -->
+<!-- SCRAPE_NOTE: Simplified rendered page representation; NOT 1:1 source HTML. Hidden/collapsed content is excluded where detectable. Classes are heuristically filtered; at most 5 classes are retained per element and additional classes may be omitted. Open shadow roots and readable same-origin iframe documents are traversed; inaccessible iframe contents remain omitted. Canvas-rendered xterm terminals are extracted separately when accessible. -->
 <!-- PAGE_URL: https://example.com/... -->
 <!-- PAGE_TITLE: Example page -->
 <!-- CAPTURED_AT: 2026-08-30T06:50:54.059Z -->
@@ -303,13 +309,15 @@ Each capture includes scraper provenance and basic page context before the simpl
 ## Limitations
 
 * The output is intentionally simplified and is not source HTML
-* `iframe` contents are skipped
+* Same-origin iframe contents are captured only when the embedding page can directly read the frame DOM; cross-origin frames and sandboxed frames with opaque origins remain skipped
+* Frame documents are captured at scrape time; Savage Scraper does not add separate iframe scrolling, settling or animation waits
 * SVG content is skipped
 * Canvas content is skipped, except for supported xterm.js extraction paths
-* Shadow DOM contents are not explicitly traversed
+* Open Shadow DOM is traversed; closed Shadow DOM is not accessible after creation and remains skipped
 * Visibility detection is heuristic and may not perfectly match every complex layout
 * MCP lazy loading only scrolls the main document; nested scrolling and arbitrary virtualized UIs are not generalized
 * Access to internal xterm.js objects depends on how the page exposes and stores its terminal instance
+* Special xterm.js object/buffer discovery is still centered on the top document; xterm instances inside frames or shadow roots are not guaranteed to be recovered through the special xterm paths
 * xterm.js object discovery may be relatively expensive on very large JavaScript applications
 * Chrome-protected pages such as `chrome://extensions` cannot be scraped by normal extensions
 

@@ -4,7 +4,7 @@ Effective date: October 7, 2026
 
 Savage Scraper is a Chrome extension that converts rendered web-page content into a simplified HTML representation for two closely related user-facing workflows:
 
-1. manual capture, where the user invokes Savage Scraper and the generated representation is copied to the user's local clipboard; and
+1. manual capture, where the user invokes Savage Scraper, the generated representation is copied to the user's local clipboard and the user may optionally open that same representation in a local rendered preview; and
 2. optional local MCP integration, where the user explicitly enables MCP website access and Savage Scraper returns the generated representation to the user's locally running `savage_mcp` process.
 
 Savage Scraper does not operate a developer-controlled backend service.
@@ -34,6 +34,8 @@ Because arbitrary website content may contain personal or sensitive information,
 ## Manual mode
 
 In manual mode, the user explicitly invokes Savage Scraper on the active tab. The extension generates the simplified page representation locally and writes it to the user's local system clipboard.
+
+After a successful manual capture, the user may click **PREVIEW** to open that exact generated representation in an extension-owned browser tab. The preview uses the capture already held in extension memory; Savage Scraper does not read the system clipboard to create the preview. Preview content is rendered in a sandboxed frame without page scripts, live iframes or remote page resources.
 
 Manual mode uses Chrome's temporary `activeTab` access and does not require the optional broad HTTP/HTTPS host permission used by MCP mode. When a captured page contains an iframe whose document is directly readable by that page under the same-origin policy, Savage Scraper may include that frame's rendered content as part of the same user-initiated capture. This does not require an additional iframe-specific Chrome permission.
 
@@ -70,7 +72,7 @@ Savage Scraper does not send scraped page content, page URLs, form values, termi
 
 The extension contains no analytics, advertising, telemetry or remotely hosted executable code.
 
-In manual mode, the generated result is written to the user's local system clipboard. After that, clipboard contents are controlled by the user's operating system and applications into which the user chooses to paste them.
+In manual mode, the generated result is written to the user's local system clipboard. After that, clipboard contents are controlled by the user's operating system and applications into which the user chooses to paste them. If the user opens a preview, the same generated result remains entirely inside the extension/browser process and is not transmitted to a website or developer-operated service.
 
 In MCP mode, the generated result is sent over a WebSocket connection bound to the loopback interface (`127.0.0.1`) to the user's locally running `savage_mcp` process on the same computer. The bridge uses a shared secret for mutual authentication. The bridge token itself is not sent over the WebSocket.
 
@@ -79,6 +81,8 @@ In MCP mode, the generated result is sent over a WebSocket connection bound to t
 ## Data storage and retention
 
 Scraped page content is processed in memory and is not persistently stored by Savage Scraper.
+
+When the user explicitly clicks **PREVIEW**, Savage Scraper temporarily places that capture in `chrome.storage.session` so the newly opened extension preview tab can receive it after the popup closes. Chrome's session storage is memory-backed. The preview entry is removed immediately after the preview tab reads it. A failed or interrupted preview handoff may leave the temporary entry in session memory until a later preview cleanup, extension reload/update/disable, or browser restart.
 
 Savage Scraper stores user-configurable settings in `chrome.storage.local`, including:
 
@@ -101,7 +105,7 @@ Savage Scraper uses the following required Chrome extension permissions:
 
 - `activeTab` — temporary access to the current tab after the user explicitly invokes manual scraping;
 - `scripting` — to run the packaged scraper and MCP page-settling/lazy-load scroll code on a page the extension is authorized to access;
-- `storage` — to store extension preferences, local MCP bridge settings and the session-scoped MCP tab identifier;
+- `storage` — to store extension preferences, local MCP bridge settings, the session-scoped MCP tab identifier and the temporary in-memory handoff used only when the user opens a rendered preview;
 - `clipboardWrite` — to copy manual capture output to the user's clipboard;
 - `alarms` — to reliably close the dedicated MCP agent tab after inactivity and to maintain/recover the explicitly enabled local MCP bridge across Manifest V3 service-worker suspension.
 
@@ -110,6 +114,8 @@ Savage Scraper also declares optional HTTP/HTTPS host permissions. These permiss
 The extension's MCP logic separately restricts actual navigation and scraping to the user's `allowed_hosts` whitelist and any configured `allowed_paths` restrictions supplied by the authenticated local `savage_mcp` process. These policy values are held in memory for enforcement and are not persisted by Savage Scraper.
 
 Version 1.3.0 adds traversal of open Shadow DOM and readable same-origin iframe documents without adding Chrome permissions or expanding the optional host-permission patterns.
+
+Version 1.4.0 adds an explicitly user-triggered local rendered preview. It uses the extension's existing `storage` permission and adds no new Chrome permission or host-permission pattern.
 
 ## Local bridge security
 

@@ -8,7 +8,7 @@ Savage Scraper is built for a simple job: **give a human or an AI useful page co
 
 It has two modes built around the same scraper:
 
-* **Manual mode** - click the toolbar icon to scrape the active page and copy the result to the clipboard.
+* **Manual mode** - click the toolbar icon to scrape the active page, copy the result to the clipboard and optionally open a local rendered preview of that exact capture.
 * **Optional MCP mode** - connect to the local [Savage MCP](https://github.com/dominikduda/savage_mcp) server so an MCP client can read explicitly allowlisted sites through the Chrome profile you already use.
 
 Manual behavior remains the default and does not require MCP access.
@@ -59,6 +59,7 @@ If you need an agent to click through workflows, fill forms, operate application
 ## Why the scraper itself?
 
 * One click immediately scrapes the active page and copies the result
+* Opens the exact generated capture in a local semantic preview without reading it back from the clipboard
 * Extracts rendered page content instead of dumping raw source HTML
 * Keeps useful semantic structure while removing a lot of framework/CSS noise
 * Preserves empty native and ARIA table cells so row/column alignment is not lost
@@ -110,9 +111,26 @@ Open the page you want to capture and click the **Savage Scraper** toolbar icon.
 
 The extension immediately runs the scraper, copies the generated output to the clipboard and shows a small popup with the result state and settings.
 
-After a successful scrape the button changes to **SCRAPED**, then fades back to **RUN** so you can capture the page again without reopening the popup.
+After a successful scrape the button changes to **SCRAPED**, then fades back to **RUN** so you can capture the page again without reopening the popup. A **PREVIEW** button is also enabled for that capture.
 
 The popup closes automatically after the configured delay. A progress bar shows how much time remains before it closes.
+
+## Local rendered preview
+
+Click **PREVIEW** after a successful manual scrape to open the exact generated HTML in an extension-owned browser tab. The preview uses the in-memory scrape that was just copied; it does not read the system clipboard.
+
+The handoff is written to `chrome.storage.session` only when **PREVIEW** is clicked, then removed as soon as the preview tab reads it. Chrome keeps session storage in memory rather than persistent extension storage. Very large captures can exceed Chrome's session-storage quota; in that case previewing fails with an explanatory popup message while the clipboard copy remains unchanged.
+
+The preview is intentionally a semantic rendering of the generated scrape, not a reconstruction of the original website:
+
+* original page styles, scripts and remote resources are not loaded;
+* links are displayed but made inert so previewing does not navigate or trigger page requests;
+* `<iframe-content>` wrappers are shown as visibly separated embedded-frame sections and never recreate live iframes;
+* `<terminal>` snapshots are rendered as scrollable monospaced terminal text, including extracted scrollback where the scraper captured it;
+* native tables get lightweight borders so intentionally empty cells remain visible;
+* captured dialogs and closed-details content are forced visible so content present in the scrape can actually be inspected.
+
+The rendered content is isolated in a sandboxed iframe with no script or form privileges.
 
 ## MCP integration
 
@@ -273,7 +291,7 @@ Password input values are never copied or returned. Hidden input controls are ex
 
 Savage Scraper does not contain analytics, advertising, telemetry, remotely hosted code or a developer-operated backend.
 
-In manual mode, scraping happens locally and the result is written to the local clipboard.
+In manual mode, scraping happens locally and the result is written to the local clipboard. If the user clicks **PREVIEW**, that same capture is handed to the extension's preview tab through temporary in-memory `chrome.storage.session` data and removed after the preview reads it.
 
 In MCP mode, the result is sent only over an authenticated WebSocket connection to the user's locally running Savage MCP process on `127.0.0.1`. Savage Scraper does not send scraped page data to the developer. The user's MCP host and configured model provider may subsequently process the returned data according to their own configuration and policies.
 
@@ -309,6 +327,8 @@ Each capture includes scraper provenance and basic page context before the simpl
 ## Limitations
 
 * The output is intentionally simplified and is not source HTML
+* The local preview renders the simplified capture with extension-provided reader styles; it does not reproduce the original site's CSS, JavaScript, layout engine state or live widgets
+* Preview handoff uses Chrome's in-memory `storage.session` area and can fail for captures that exceed the available session-storage quota; clipboard copying is unaffected
 * Same-origin iframe contents are captured only when the embedding page can directly read the frame DOM; cross-origin frames and sandboxed frames with opaque origins remain skipped
 * Frame documents are captured at scrape time; Savage Scraper does not add separate iframe scrolling, settling or animation waits
 * SVG content is skipped

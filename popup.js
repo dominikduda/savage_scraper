@@ -10,12 +10,15 @@ const MIN_CLOSE_SECONDS = Math.ceil(
   (SCRAPPED_HOLD_MS + FADE_MS) / 1000
 );
 
+const PREVIEW_STORAGE_PREFIX = 'savagePreview:';
+
 const includeHidden = document.getElementById('includeHidden');
 const prettyFormat = document.getElementById('prettyFormat');
 const closeAfter = document.getElementById('closeAfter');
 const closeAfterValue = document.getElementById('closeAfterValue');
 const closeButton = document.getElementById('closeButton');
 const runButton = document.getElementById('runButton');
+const previewButton = document.getElementById('previewButton');
 const message = document.getElementById('message');
 const closeProgress = document.getElementById('closeProgress');
 const closeProgressFill = document.getElementById('closeProgressFill');
@@ -23,6 +26,7 @@ const closeProgressFill = document.getElementById('closeProgressFill');
 let autoCloseTimer = null;
 let transitionToken = 0;
 let isRunning = false;
+let latestPreview = null;
 
 class UnavailablePageError extends Error {
   constructor(message) {
@@ -337,6 +341,85 @@ async function copyOutput(output) {
   await navigator.clipboard.writeText(output);
 }
 
+function setPreviewAvailable(isAvailable) {
+  previewButton.disabled = !isAvailable;
+}
+
+function clearLatestPreview() {
+  latestPreview = null;
+  setPreviewAvailable(false);
+}
+
+async function clearPendingPreviews() {
+  const stored =
+    await chrome.storage.session.get(null);
+
+  const keys =
+    Object.keys(stored).filter(key =>
+      key.startsWith(
+        PREVIEW_STORAGE_PREFIX
+      )
+    );
+
+  if (keys.length) {
+    await chrome.storage.session.remove(keys);
+  }
+}
+
+async function openPreview() {
+  if (!latestPreview) {
+    return;
+  }
+
+  clearAutoClose();
+
+  const token = crypto.randomUUID();
+  const storageKey =
+    `${PREVIEW_STORAGE_PREFIX}${token}`;
+
+  try {
+    // Only create the temporary handoff when the user explicitly
+    // asks for a preview. The preview page removes it immediately
+    // after reading it.
+    await clearPendingPreviews();
+
+    await chrome.storage.session.set({
+      [storageKey]: latestPreview
+    });
+
+    await chrome.tabs.create({
+      url: chrome.runtime.getURL(
+        `preview.html#${encodeURIComponent(token)}`
+      )
+    });
+  } catch (error) {
+    try {
+      await chrome.storage.session.remove(
+        storageKey
+      );
+    } catch {
+      // Ignore cleanup failure.
+    }
+
+    const text =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    const quotaExceeded =
+      /quota|QUOTA_BYTES/i.test(text);
+
+    setMessage(
+      quotaExceeded
+        ? 'Preview is too large for temporary browser memory; the HTML is still copied.'
+        : `Preview failed: ${text}`,
+      true
+    );
+
+    armAutoClose();
+  }
+}
+
 async function runScrape() {
   if (isRunning) {
     return;
@@ -344,6 +427,7 @@ async function runScrape() {
 
   isRunning = true;
   clearAutoClose();
+  clearLatestPreview();
   markRunning();
   setMessage('');
 
@@ -353,6 +437,18 @@ async function runScrape() {
     const output = await executeScraper(tab, settings);
 
     await copyOutput(output);
+
+    latestPreview = {
+      output,
+      sourceUrl: String(tab.url || ''),
+      sourceTitle: String(tab.title || ''),
+      prettyFormat: Boolean(
+        settings.prettyFormat
+      ),
+      capturedAt: Date.now()
+    };
+
+    setPreviewAvailable(true);
 
     setMessage(
       `${output.length.toLocaleString()} chars copied`
@@ -428,6 +524,18 @@ runButton.addEventListener('click', async () => {
   }
 
   await runScrape();
+});
+
+previewButton.addEventListener('click', async () => {
+  if (
+    previewButton.disabled ||
+    isRunning ||
+    !latestPreview
+  ) {
+    return;
+  }
+
+  await openPreview();
 });
 
 for (const eventName of ['pointerdown', 'keydown']) {

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Savage Scraper preview</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <header class="preview-header">
+    <div class="preview-heading">
+      <div class="eyebrow">SAVAGE SCRAPER PREVIEW</div>
+      <h1 id="pageTitle">Captured page</h1>
+      <div id="sourceUrl" class="source-url"></div>
+    </div>
+
+    <p class="preview-note">
+      Semantic rendering of the generated scrape. Original page CSS, scripts,
+      live frames and remote resources are not loaded.
+    </p>
+  </header>
+
+  <main class="preview-main">
+    <iframe
+      id="previewFrame"
+      class="preview-frame"
+      title="Rendered scraped HTML"
+      sandbox=""
+    ></iframe>
+
+    <section id="errorPanel" class="error-panel" hidden>
+      <h2>Preview unavailable</h2>
+      <p id="errorMessage"></p>
+    </section>
+  </main>
+
+  <script src="preview.js"></script>
+</body>
+</html>

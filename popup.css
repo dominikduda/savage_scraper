@@ -181,13 +181,20 @@ input {
   opacity: 0.55;
 }
 
+.action-buttons {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 .run-button {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   width: 100%;
   height: 36px;
-  margin-top: 16px;
+  margin-top: 0;
   border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, CanvasText 9%, Canvas);
@@ -201,6 +208,31 @@ input {
     background-color 180ms ease,
     color 180ms ease,
     border-color 180ms ease;
+}
+
+.preview-button {
+  min-width: 82px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  border-radius: 8px;
+  background: Canvas;
+  color: CanvasText;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.preview-button:not(:disabled) {
+  cursor: pointer;
+}
+
+.preview-button:not(:disabled):hover {
+  background: color-mix(in srgb, CanvasText 8%, Canvas);
+}
+
+.preview-button:disabled {
+  opacity: 0.38;
 }
 
 .run-button.is-ready {

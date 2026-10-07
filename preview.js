@@ -230,7 +230,15 @@ const PREVIEW_DOCUMENT_STYLE = `
   a[data-savage-href] {
     color: LinkText;
     text-decoration: underline;
-    cursor: default;
+  }
+
+  a[data-savage-href][href] {
+    cursor: pointer;
+  }
+
+  a[data-savage-href]:not([href]) {
+    cursor: not-allowed;
+    opacity: 0.65;
   }
 
   a[data-savage-href]::after {
@@ -313,9 +321,48 @@ function normalizePrettyTerminal(
 }
 
 
+const CLICKABLE_LINK_PROTOCOLS = new Set([
+  'http:',
+  'https:',
+  'mailto:',
+  'tel:'
+]);
+
+
+function clickablePreviewHref(
+  href,
+  sourceUrl
+) {
+  const rawHref =
+    String(href || '').trim();
+
+  if (!rawHref) {
+    return null;
+  }
+
+  if (rawHref.startsWith('#')) {
+    return rawHref;
+  }
+
+  try {
+    const resolved =
+      new URL(rawHref, sourceUrl || undefined);
+
+    return CLICKABLE_LINK_PROTOCOLS.has(
+      resolved.protocol
+    )
+      ? resolved.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+
 function prepareCapturedBody(
   output,
-  prettyFormat
+  prettyFormat,
+  sourceUrl
 ) {
   const parsed =
     new DOMParser().parseFromString(
@@ -372,22 +419,63 @@ function prepareCapturedBody(
   parsed
     .querySelectorAll('a[href]')
     .forEach(anchor => {
-      const href =
+      const capturedHref =
         anchor.getAttribute('href');
 
-      if (href) {
-        anchor.setAttribute(
-          'data-savage-href',
-          href
-        );
-
-        anchor.setAttribute(
-          'title',
-          href
-        );
+      if (!capturedHref) {
+        anchor.removeAttribute('href');
+        return;
       }
 
-      anchor.removeAttribute('href');
+      anchor.setAttribute(
+        'data-savage-href',
+        capturedHref
+      );
+
+      anchor.setAttribute(
+        'title',
+        capturedHref
+      );
+
+      const clickableHref =
+        clickablePreviewHref(
+          capturedHref,
+          sourceUrl
+        );
+
+      if (!clickableHref) {
+        anchor.removeAttribute('href');
+        return;
+      }
+
+      anchor.setAttribute(
+        'href',
+        clickableHref
+      );
+
+      if (clickableHref.startsWith('#')) {
+        anchor.removeAttribute('target');
+        anchor.removeAttribute('rel');
+        anchor.removeAttribute(
+          'referrerpolicy'
+        );
+        return;
+      }
+
+      anchor.setAttribute(
+        'target',
+        '_blank'
+      );
+
+      anchor.setAttribute(
+        'rel',
+        'noopener noreferrer'
+      );
+
+      anchor.setAttribute(
+        'referrerpolicy',
+        'no-referrer'
+      );
     });
 
   parsed
@@ -411,12 +499,14 @@ function prepareCapturedBody(
 
 function buildPreviewDocument(
   output,
-  prettyFormat
+  prettyFormat,
+  sourceUrl
 ) {
   const body =
     prepareCapturedBody(
       output,
-      prettyFormat
+      prettyFormat,
+      sourceUrl
     );
 
   return (
@@ -496,7 +586,8 @@ async function loadPreview() {
   previewFrame.srcdoc =
     buildPreviewDocument(
       payload.output,
-      Boolean(payload.prettyFormat)
+      Boolean(payload.prettyFormat),
+      String(payload.sourceUrl || '')
     );
 }
 

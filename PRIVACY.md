@@ -1,6 +1,6 @@
 # Savage Scraper Privacy Policy
 
-Effective date: October 7, 2026
+Effective date: October 11, 2026
 
 Savage Scraper is a Chrome extension that converts rendered web-page content into a simplified HTML representation for two closely related user-facing workflows:
 
@@ -35,7 +35,7 @@ Because arbitrary website content may contain personal or sensitive information,
 
 In manual mode, the user explicitly invokes Savage Scraper on the active tab. The extension generates the simplified page representation locally and writes it to the user's local system clipboard.
 
-After a successful manual capture, the user may click **PREVIEW** to open that exact generated representation in an extension-owned browser tab. The preview uses the capture already held in extension memory; Savage Scraper does not read the system clipboard to create the preview. Preview content is rendered in a sandboxed frame without page scripts, live iframes or remote page resources.
+After a successful manual capture, the user may click **PREVIEW** to open that exact generated representation in an extension-owned browser tab. The preview uses the capture already held in extension memory; Savage Scraper does not read the system clipboard to create the preview. Preview content is rendered in a sandboxed frame without executing captured page scripts, recreating live iframes or automatically loading remote page resources. Supported captured links can open their original destinations only when explicitly clicked by the user.
 
 Manual mode uses Chrome's temporary `activeTab` access and does not require the optional broad HTTP/HTTPS host permission used by MCP mode. When a captured page contains an iframe whose document is directly readable by that page under the same-origin policy, Savage Scraper may include that frame's rendered content as part of the same user-initiated capture. This does not require an additional iframe-specific Chrome permission.
 
@@ -62,7 +62,7 @@ During an MCP browser operation, Savage Scraper temporarily brings the dedicated
 
 ## How data is used
 
-Page data is used only to provide Savage Scraper's disclosed single purpose: generating a simplified representation of rendered web-page content for the user's manual clipboard workflow or explicitly enabled local MCP workflow.
+Page data is used only to provide Savage Scraper's disclosed single purpose: generating a simplified representation of rendered web-page content for the user's manual clipboard and local preview workflow or explicitly enabled local MCP workflow.
 
 Savage Scraper does not use page data for advertising, profiling, analytics, tracking, creditworthiness or unrelated purposes.
 
@@ -72,7 +72,7 @@ Savage Scraper does not send scraped page content, page URLs, form values, termi
 
 The extension contains no analytics, advertising, telemetry or remotely hosted executable code.
 
-In manual mode, the generated result is written to the user's local system clipboard. After that, clipboard contents are controlled by the user's operating system and applications into which the user chooses to paste them. If the user opens a preview, the same generated result remains entirely inside the extension/browser process and is not transmitted to a website or developer-operated service.
+In manual mode, the generated result is written to the user's local system clipboard. After that, clipboard contents are controlled by the user's operating system and applications into which the user chooses to paste them. If the user opens a preview, the generated result remains inside the extension/browser process. If the user explicitly clicks a supported captured link, Chrome may open the original destination and make the normal network requests for that destination; Savage Scraper does not attach or transmit the scraped result as part of that navigation.
 
 In MCP mode, the generated result is sent over a WebSocket connection bound to the loopback interface (`127.0.0.1`) to the user's locally running `savage_mcp` process on the same computer. The bridge uses a shared secret for mutual authentication. The bridge token itself is not sent over the WebSocket.
 

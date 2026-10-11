@@ -121,16 +121,16 @@ Click **PREVIEW** after a successful manual scrape to open the exact generated H
 
 The handoff is written to `chrome.storage.session` only when **PREVIEW** is clicked, then removed as soon as the preview tab reads it. Chrome keeps session storage in memory rather than persistent extension storage. Very large captures can exceed Chrome's session-storage quota; in that case previewing fails with an explanatory popup message while the clipboard copy remains unchanged.
 
-The preview is intentionally a semantic rendering of the generated scrape, not a reconstruction of the original website:
+The preview preserves the captured textual and semantic content while applying custom reader styling for readability. It is not intended to reproduce the original website's visual styling or live behavior:
 
-* original page styles, scripts and remote resources are not loaded;
-* links are displayed but made inert so previewing does not navigate or trigger page requests;
+* original page styles, scripts, live frames and remote resources are not loaded automatically;
+* supported captured links remain clickable: same-page fragments stay inside the preview, while HTTP(S), `mailto:` and `tel:` destinations open only after an explicit click; unsafe URL schemes remain inert;
 * `<iframe-content>` wrappers are shown as visibly separated embedded-frame sections and never recreate live iframes;
 * `<terminal>` snapshots are rendered as scrollable monospaced terminal text, including extracted scrollback where the scraper captured it;
 * native tables get lightweight borders so intentionally empty cells remain visible;
 * captured dialogs and closed-details content are forced visible so content present in the scrape can actually be inspected.
 
-The rendered content is isolated in a sandboxed iframe with no script or form privileges.
+The rendered content is isolated in a sandboxed iframe with no script or form privileges. Only explicitly clicked supported links can open an external destination.
 
 ## MCP integration
 
